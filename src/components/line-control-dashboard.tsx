@@ -5,20 +5,22 @@ import {
   ArrowCounterClockwiseIcon,
   BroadcastIcon,
   CheckCircleIcon,
-  CubeIcon,
-  FactoryIcon,
   PlusIcon,
-  PulseIcon,
   ShieldWarningIcon,
-  SirenIcon,
   TimerIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   diagnoseIncident,
   getStation,
-  initialIncidents,
   type Impact,
   type Incident,
   type IncidentStatus,
@@ -26,42 +28,78 @@ import {
 } from "@/lib/line-data";
 import {
   createTeamTicket,
-  initialTickets,
   recommendedTeamForIncident,
   teamLabels,
-  ticketStatusLabels,
   type SupportTeam,
   type TeamTicket,
   type TicketStatus,
 } from "@/lib/team-requests";
+import {
+  formatShiftTime,
+  getScenarioByIncidentId,
+  getScheduledScenario,
+  getShiftTelemetry,
+  SHIFT_TICK_MINUTES,
+  SHIFT_TOTAL_TICKS,
+  shiftScenarios,
+  type ShiftScenario,
+} from "@/lib/shift-simulation";
+import {
+  ShiftSimulationDock,
+  TelemetryPanel,
+} from "@/components/shift-simulation-ui";
 
 const FactoryTwin = dynamic(
-  () => import("@/components/factory-twin").then((module) => module.FactoryTwin),
+  () =>
+    import("@/components/factory-twin").then((module) => module.FactoryTwin),
   {
     ssr: false,
     loading: () => (
-      <div className="scene-loading" aria-label="Loading 3D assembly line">
+      <div
+        className="scene-loading"
+        aria-label="Loading the 3D production line"
+      >
         <div className="scene-loading-lines" aria-hidden="true" />
-        <p>Loading line geometry</p>
-        <span>Focused line · local assets</span>
+        <p>Loading Line 1</p>
       </div>
     ),
   },
 );
 
-type RailTab = "incidents" | "requests";
-type Notice = { id: number; text: string; tone: "sent" | "confirmed" };
+type RailView = "issues" | "requests" | "telemetry";
+type Notice = {
+  id: number;
+  text: string;
+  tone: "sent" | "confirmed" | "alert";
+};
 
 const statusLabels: Record<IncidentStatus, string> = {
-  new: "New",
+  new: "New issue",
   acknowledged: "Acknowledged",
   in_progress: "In progress",
   contained: "Contained",
   resolved: "Resolved",
 };
 
+const impactLabels: Record<Impact, string> = {
+  safety_stop: "Line 1 stopped",
+  line_stop: "Line 1 stopped",
+  quality_hold: "Quality check",
+  degraded: "Line running",
+};
+
+const ticketLabels: Record<TicketStatus, string> = {
+  awaiting_ack: "Waiting for reply",
+  acknowledged: "Confirmed",
+  working: "Responding",
+  blocked: "Blocked",
+  ready_for_check: "Ready to verify",
+  closed: "Closed",
+};
+
 const responseNames: Record<SupportTeam, string> = {
   maintenance: "Electrical response · Team 2",
+  tool_crib: "Tool crib · Assembly support",
   quality: "GA quality response",
   material_flow: "Route 3 dispatcher",
   production_planning: "Line planning desk",
@@ -70,266 +108,333 @@ const responseNames: Record<SupportTeam, string> = {
 
 const responseEtas: Record<SupportTeam, number> = {
   maintenance: 5,
+  tool_crib: 3,
   quality: 4,
   material_flow: 6,
   production_planning: 7,
   engineering: 9,
 };
 
-const currentTime = () =>
-  new Intl.DateTimeFormat("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).format(new Date());
+const ageLabel = (minutes: number) =>
+  minutes === 0 ? "just now" : `${minutes} min`;
+
+const impactTone = (impact: Impact) => {
+  if (impact === "safety_stop" || impact === "line_stop") return "stop";
+  if (impact === "quality_hold") return "check";
+  return "running";
+};
+
+function playIncidentTone(audioContext: AudioContext | null) {
+  if (!audioContext || audioContext.state !== "running") return;
+
+  const startedAt = audioContext.currentTime;
+  [0, 0.18].forEach((offset) => {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    oscillator.type = "square";
+    oscillator.frequency.setValueAtTime(740, startedAt + offset);
+    gain.gain.setValueAtTime(0.0001, startedAt + offset);
+    gain.gain.exponentialRampToValueAtTime(0.075, startedAt + offset + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startedAt + offset + 0.12);
+    oscillator.connect(gain).connect(audioContext.destination);
+    oscillator.start(startedAt + offset);
+    oscillator.stop(startedAt + offset + 0.13);
+  });
+}
 
 function TeslaWordmark() {
   return (
-    <div className="brand">
+    <div className="brand" aria-label="Tesla Line Control">
       <span className="tesla-wordmark">TESLA</span>
-      <span className="brand-divider" />
+      <span className="brand-divider" aria-hidden="true" />
       <span className="product-name">LINE CONTROL</span>
     </div>
   );
 }
 
-function StatusPill({ incident }: { incident: Incident }) {
-  return (
-    <span className={"severity-pill severity-" + incident.severity}>
-      {incident.severity}
-    </span>
-  );
-}
-
 function TicketState({ status }: { status: TicketStatus }) {
   return (
-    <span className={"ticket-state status-" + status}>
+    <span className={`ticket-state status-${status}`}>
       <i aria-hidden="true" />
-      {ticketStatusLabels[status]}
+      {ticketLabels[status]}
     </span>
   );
 }
 
-function IncidentCard({
+function TeamResponseRow({
+  ticket,
+  onFollowUp,
+  onVerify,
+}: {
+  ticket: TeamTicket;
+  onFollowUp: () => void;
+  onVerify: () => void;
+}) {
+  const response =
+    ticket.status === "awaiting_ack"
+      ? `Sent ${ticket.sentAt}. No reply yet.`
+      : ticket.status === "blocked"
+        ? ticket.blockedBy || "The team reported a blocker."
+        : `${ticket.assignee || teamLabels[ticket.team]}${
+            ticket.etaMinutes !== undefined
+              ? ` · ${ticket.etaMinutes} min ETA`
+              : ""
+          }`;
+
+  return (
+    <div className="team-response-row">
+      <div className="team-response-copy">
+        <div>
+          <strong>{teamLabels[ticket.team]}</strong>
+          <TicketState status={ticket.status} />
+        </div>
+        <p>{response}</p>
+      </div>
+      {ticket.status === "awaiting_ack" && (
+        <button className="small-action" onClick={onFollowUp}>
+          Call again
+        </button>
+      )}
+      {ticket.status === "ready_for_check" && (
+        <button className="small-action is-primary" onClick={onVerify}>
+          Verify work
+        </button>
+      )}
+    </div>
+  );
+}
+
+function IssueRow({
   incident,
-  selected,
   tickets,
   onSelect,
 }: {
   incident: Incident;
-  selected: boolean;
   tickets: TeamTicket[];
   onSelect: () => void;
 }) {
   const station = getStation(incident.stationId);
-  const openRequests = tickets.filter((ticket) => ticket.status !== "closed");
-  const unconfirmed = openRequests.filter((ticket) => ticket.status === "awaiting_ack").length;
-  const requestText =
-    openRequests.length === 0
-      ? "No team contacted"
-      : unconfirmed > 0
-        ? String(unconfirmed) + " awaiting confirmation"
-        : String(openRequests.length) + (openRequests.length === 1 ? " team responding" : " teams responding");
+  const waiting = tickets.some((ticket) => ticket.status === "awaiting_ack");
 
   return (
-    <button
-      className={"incident-card" + (selected ? " is-selected" : "")}
-      onClick={onSelect}
-      aria-pressed={selected}
-    >
-      <span className="incident-copy">
-        <span className="incident-card-topline">
-          <StatusPill incident={incident} />
-          <span className="incident-age">
-            {incident.ageMinutes === 0 ? "just now" : String(incident.ageMinutes) + "m ago"}
-          </span>
-        </span>
+    <button className="other-issue-row" onClick={onSelect}>
+      <i
+        className={`issue-dot tone-${impactTone(incident.impact)}`}
+        aria-hidden="true"
+      />
+      <span>
         <strong>{incident.title}</strong>
-        <span className="incident-location">
-          {station.id} · {station.name}
-        </span>
-        <span className={"incident-request-note" + (unconfirmed > 0 ? " needs-confirmation" : "")}>
-          {requestText}
-        </span>
+        <small>
+          {station.id} · {impactLabels[incident.impact]} ·{" "}
+          {ageLabel(incident.ageMinutes)}
+        </small>
+      </span>
+      <span className={waiting ? "row-state needs-reply" : "row-state"}>
+        {waiting ? "Waiting" : "Open"}
       </span>
     </button>
   );
 }
 
-function IncidentRequestRow({ ticket }: { ticket: TeamTicket }) {
-  return (
-    <div className="incident-request-row">
-      <span>
-        <strong>{teamLabels[ticket.team]}</strong>
-        <small>{ticket.id}</small>
-      </span>
-      <TicketState status={ticket.status} />
-      <span className="request-response">
-        {ticket.status === "awaiting_ack"
-          ? "Reply due in " + String(ticket.responseTargetMinutes) + " min"
-          : ticket.assignee || "Team acknowledged"}
-        {ticket.etaMinutes !== undefined && <small>ETA {ticket.etaMinutes} min</small>}
-      </span>
-    </div>
-  );
-}
-
-function IncidentDetail({
+function IncidentFocus({
   incident,
   tickets,
   onStatusChange,
   onDispatch,
   onViewRequests,
+  onFollowUp,
+  onVerify,
 }: {
   incident: Incident;
   tickets: TeamTicket[];
-  onStatusChange: (status: IncidentStatus) => void;
+  onStatusChange: (incidentId: string, status: IncidentStatus) => void;
   onDispatch: () => void;
   onViewRequests: () => void;
+  onFollowUp: (ticketId: string) => void;
+  onVerify: (ticketId: string) => void;
 }) {
   const station = getStation(incident.stationId);
-  const openRequests = tickets.filter((ticket) => ticket.status !== "closed");
+  const openTickets = tickets.filter((ticket) => ticket.status !== "closed");
   const suggestedTeam = recommendedTeamForIncident(incident);
-  const canAcknowledge = incident.status === "new";
+  const scenario = getScenarioByIncidentId(incident.id);
   const isContained = incident.status === "contained";
   const isResolved = incident.status === "resolved";
+  const stopsLine =
+    incident.impact === "line_stop" || incident.impact === "safety_stop";
+  const requiredRequest = tickets.find(
+    (ticket) => ticket.team === suggestedTeam,
+  );
+  const waitingForTeamCheck = Boolean(
+    isContained && requiredRequest && requiredRequest.status !== "closed",
+  );
+  const requiredRequestMissing = Boolean(isContained && !requiredRequest);
+  const recoveryBlocked = waitingForTeamCheck || requiredRequestMissing;
+
+  const primaryLabel = waitingForTeamCheck
+    ? requiredRequest?.status === "ready_for_check"
+      ? `Verify ${teamLabels[suggestedTeam]} work first`
+      : `Waiting for ${teamLabels[suggestedTeam]}`
+    : requiredRequestMissing
+      ? `Request ${teamLabels[suggestedTeam]} before closing`
+      : isResolved
+        ? "Reopen issue"
+        : isContained
+          ? stopsLine
+            ? "Confirm safe restart"
+            : "Close issue"
+          : scenario?.containmentActionLabel || "Record containment";
+
+  const nextStatus: IncidentStatus = isResolved
+    ? "in_progress"
+    : isContained
+      ? "resolved"
+      : "contained";
 
   return (
-    <section className="incident-detail" aria-label={"Details for " + incident.title}>
-      <header className="detail-header">
-        <div>
-          <div className="detail-kicker">
-            <StatusPill incident={incident} />
-            <span>{statusLabels[incident.status]}</span>
-            <span>{incident.ageMinutes === 0 ? "just now" : String(incident.ageMinutes) + " min"}</span>
-          </div>
-          <h2>{incident.title}</h2>
-          <p>{station.id} · {station.name} · {incident.source}</p>
-        </div>
-        <div className="repair-estimate" role="group" aria-label="Estimated recovery time">
-          <TimerIcon size={18} aria-hidden="true" />
-          <span>
-            Recovery estimate
-            <strong>{incident.eta.median} min</strong>
+    <article
+      className="incident-focus"
+      aria-label={`Current issue: ${incident.title}`}
+    >
+      <header className="focus-header">
+        <div className="issue-meta">
+          <span className={`impact-label tone-${impactTone(incident.impact)}`}>
+            <i aria-hidden="true" />
+            {impactLabels[incident.impact]}
           </span>
+          <span>{station.id}</span>
+          <span>{ageLabel(incident.ageMinutes)}</span>
+        </div>
+        <div className="focus-title-row">
+          <div>
+            <h2>{incident.title}</h2>
+            <p>{incident.description}</p>
+          </div>
+          <div
+            className="recovery-time"
+            aria-label={`Estimated recovery ${incident.eta.median} minutes`}
+          >
+            <TimerIcon size={15} aria-hidden="true" />
+            <span>
+              Est. recovery
+              <strong>{incident.eta.median} min</strong>
+            </span>
+          </div>
         </div>
       </header>
 
-      <div className="detail-scroll">
-        <section className="immediate-action">
-          <div className="section-label">
-            <ShieldWarningIcon size={15} aria-hidden="true" />
-            Do now
-          </div>
-          <p>{incident.containment}</p>
-        </section>
+      <section className="diagnosis-summary">
+        <div>
+          <h3>Suggested diagnosis</h3>
+          <span>
+            {incident.history.confidence}% match · {incident.history.cases} past
+            events
+          </span>
+        </div>
+        <p>{incident.likelyCause}</p>
+      </section>
 
-        <section className="team-response-block">
-          <header>
+      <section className="next-action">
+        <div className="section-heading">
+          <ShieldWarningIcon size={17} aria-hidden="true" />
+          <h3>Do this now</h3>
+        </div>
+        <p>{incident.containment}</p>
+        <button
+          className="primary-button action-primary"
+          onClick={() => onStatusChange(incident.id, nextStatus)}
+          disabled={recoveryBlocked}
+        >
+          <CheckCircleIcon size={17} weight="bold" aria-hidden="true" />
+          {primaryLabel}
+        </button>
+      </section>
+
+      <section className="team-response">
+        <header>
+          <div>
+            <h3>Team response</h3>
+            <p>Recommended contact: {incident.owner}</p>
+          </div>
+          <button
+            className="secondary-button compact-button"
+            onClick={onDispatch}
+          >
+            <BroadcastIcon size={15} aria-hidden="true" />
+            {openTickets.length > 0
+              ? "Request team"
+              : `Request ${teamLabels[suggestedTeam]}`}
+          </button>
+        </header>
+
+        {openTickets.length > 0 ? (
+          <div className="team-response-list">
+            {openTickets.map((ticket) => (
+              <TeamResponseRow
+                key={ticket.id}
+                ticket={ticket}
+                onFollowUp={() => onFollowUp(ticket.id)}
+                onVerify={() => onVerify(ticket.id)}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="empty-response">
+            No team has been requested for this issue.
+          </p>
+        )}
+
+        <button className="text-button" onClick={onViewRequests}>
+          View all team follow-ups
+        </button>
+      </section>
+
+      <details className="detail-disclosure">
+        <summary>Technical details</summary>
+        <div className="technical-content">
+          <dl className="technical-summary">
             <div>
-              <div className="section-label">
-                <BroadcastIcon size={15} aria-hidden="true" />
-                Team response
-              </div>
-              <p>
-                {openRequests.length > 0
-                  ? "Track confirmation and arrival before relying on the handoff."
-                  : "No support team has been contacted for this incident."}
-              </p>
+              <dt>Error</dt>
+              <dd>{incident.code}</dd>
             </div>
-            <button className="dispatch-button" onClick={onDispatch}>
-              <BroadcastIcon size={15} weight="bold" aria-hidden="true" />
-              {openRequests.length > 0
-                ? "Request another team"
-                : "Request " + teamLabels[suggestedTeam].toLowerCase()}
-            </button>
-          </header>
-
-          {openRequests.length > 0 && (
-            <div className="incident-request-list">
-              {openRequests.map((ticket) => (
-                <IncidentRequestRow ticket={ticket} key={ticket.id} />
-              ))}
-              <button className="text-button" onClick={onViewRequests}>
-                Open all team requests
-              </button>
+            <div>
+              <dt>Source</dt>
+              <dd>{incident.source}</dd>
             </div>
-          )}
-        </section>
-
-        <section className="cause-summary">
-          <div className="section-label">
-            <PulseIcon size={15} aria-hidden="true" />
-            Likely cause
-          </div>
-          <p>{incident.likelyCause}</p>
-        </section>
-
-        <details className="technical-disclosure">
-          <summary>Sensor data and repair scope</summary>
-          <div className="compact-evidence">
+          </dl>
+          <div className="evidence-list">
             {incident.evidence.map((item) => (
-              <span key={item.label}>
-                <small>{item.label}</small>
-                <strong className={item.tone ? "value-" + item.tone : undefined}>
+              <div key={item.label}>
+                <span>{item.label}</span>
+                <strong
+                  className={item.tone ? `value-${item.tone}` : undefined}
+                >
                   {item.value}
                 </strong>
-              </span>
-            ))}
-          </div>
-          <div className="technical-copy">
-            <strong>{incident.history.confidence}% historical match</strong>
-            <p>{incident.history.note}</p>
-            <strong>Suggested repair scope</strong>
-            <p>{incident.permanentFix}</p>
-          </div>
-        </details>
-
-        <details className="technical-disclosure activity-disclosure">
-          <summary>Activity · {incident.timeline.length} updates</summary>
-          <div className="compact-timeline">
-            {[...incident.timeline].reverse().map((entry) => (
-              <div key={entry.id}>
-                <time>{entry.time}</time>
-                <span>
-                  <strong>{entry.label}</strong>
-                  {entry.detail}
-                </span>
               </div>
             ))}
           </div>
-        </details>
-      </div>
+          <div className="diagnosis-copy">
+            <h3>Repair path</h3>
+            <p>{incident.permanentFix}</p>
+          </div>
+        </div>
+      </details>
 
-      <footer className="detail-actions">
-        {isResolved ? (
-          <button className="secondary-button" onClick={() => onStatusChange("in_progress")}>
-            <ArrowCounterClockwiseIcon size={16} aria-hidden="true" />
-            Reopen incident
-          </button>
-        ) : (
-          <>
-            {canAcknowledge && (
-              <button className="secondary-button" onClick={() => onStatusChange("acknowledged")}>
-                Acknowledge
-              </button>
-            )}
-            <button
-              className="primary-button"
-              onClick={() => onStatusChange(isContained ? "resolved" : "contained")}
-            >
-              <CheckCircleIcon size={17} weight="bold" aria-hidden="true" />
-              {isContained
-                ? incident.impact === "line_stop" || incident.impact === "safety_stop"
-                  ? "Return line to service"
-                  : "Resolve incident"
-                : "Containment complete"}
-            </button>
-          </>
-        )}
-      </footer>
-    </section>
+      <details className="detail-disclosure activity-disclosure">
+        <summary>Activity history ({incident.timeline.length})</summary>
+        <div className="activity-list">
+          {[...incident.timeline].reverse().map((entry) => (
+            <div key={entry.id}>
+              <time>{entry.time}</time>
+              <span>
+                <strong>{entry.label}</strong>
+                {entry.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+      </details>
+    </article>
   );
 }
 
@@ -346,51 +451,47 @@ function TicketRow({
   onFollowUp: () => void;
   onVerify: () => void;
 }) {
-  const latestUpdate = ticket.updates[ticket.updates.length - 1];
   const station = getStation(ticket.stationId);
+  const response =
+    ticket.status === "awaiting_ack"
+      ? `Sent ${ticket.sentAt} · no reply yet`
+      : `${ticket.assignee || teamLabels[ticket.team]}${
+          ticket.etaMinutes !== undefined
+            ? ` · ${ticket.etaMinutes} min ETA`
+            : ""
+        }`;
 
   return (
-    <article className={"ticket-row ticket-" + ticket.status}>
+    <article className="ticket-row">
       <header>
-        <span className="ticket-team">{teamLabels[ticket.team]}</span>
+        <strong>{teamLabels[ticket.team]}</strong>
         <TicketState status={ticket.status} />
       </header>
-      <h3>{ticket.subject}</h3>
-      <p className="ticket-link">
-        {ticket.id} · {station.id} · {incident.title}
-      </p>
-      <p className="ticket-request">{ticket.request}</p>
-      <div className="ticket-response-line">
-        {ticket.status === "awaiting_ack" ? (
-          <span className="response-missing">
-            No confirmation · reply target {ticket.responseTargetMinutes} min
-          </span>
-        ) : (
-          <span>
-            <strong>{ticket.assignee || teamLabels[ticket.team]}</strong>
-            {ticket.etaMinutes !== undefined && " · ETA " + String(ticket.etaMinutes) + " min"}
-          </span>
-        )}
-      </div>
-      <div className="ticket-last-update">
-        <time>{latestUpdate.time}</time>
-        <span>{latestUpdate.message}</span>
-      </div>
-      <footer>
-        <button className="text-button" onClick={onOpenIncident}>
-          Open incident
-        </button>
-        {ticket.status === "awaiting_ack" && (
-          <button className="secondary-button compact-button" onClick={onFollowUp}>
-            Log radio follow-up
-          </button>
-        )}
-        {ticket.status === "ready_for_check" && (
-          <button className="primary-button compact-button" onClick={onVerify}>
-            Verify and close
-          </button>
-        )}
-      </footer>
+      <button className="ticket-incident-link" onClick={onOpenIncident}>
+        {station.id} · {incident.title}
+      </button>
+      <p>{response}</p>
+      {(ticket.status === "awaiting_ack" ||
+        ticket.status === "ready_for_check") && (
+        <footer>
+          {ticket.status === "awaiting_ack" && (
+            <button
+              className="secondary-button compact-button"
+              onClick={onFollowUp}
+            >
+              Call again
+            </button>
+          )}
+          {ticket.status === "ready_for_check" && (
+            <button
+              className="primary-button compact-button"
+              onClick={onVerify}
+            >
+              Verify work
+            </button>
+          )}
+        </footer>
+      )}
     </article>
   );
 }
@@ -419,25 +520,24 @@ function TeamRequestPanel({
   const openTickets = [...tickets]
     .filter((ticket) => ticket.status !== "closed")
     .sort((a, b) => rank[a.status] - rank[b.status]);
-  const waiting = openTickets.filter((ticket) => ticket.status === "awaiting_ack").length;
+  const waiting = openTickets.filter(
+    (ticket) => ticket.status === "awaiting_ack",
+  ).length;
 
   return (
-    <section className="request-panel" aria-label="Open team requests">
-      <header className="request-panel-header">
-        <div>
-          <span className="eyebrow">Cross-team follow-up</span>
-          <h2>Open team requests</h2>
-        </div>
-        <span className={waiting > 0 ? "waiting-count has-waiting" : "waiting-count"}>
-          {waiting} awaiting reply
+    <section className="request-panel" aria-label="Team follow-up">
+      <div className="request-summary">
+        <strong>{openTickets.length} open requests</strong>
+        <span className={waiting > 0 ? "has-waiting" : undefined}>
+          {waiting > 0 ? `${waiting} needs a reply` : "All teams replied"}
         </span>
-      </header>
-
+      </div>
       <div className="ticket-list">
         {openTickets.length > 0 ? (
           openTickets.map((ticket) => {
             const incident =
-              incidents.find((item) => item.id === ticket.incidentId) ?? incidents[0];
+              incidents.find((item) => item.id === ticket.incidentId) ??
+              incidents[0];
             return (
               <TicketRow
                 key={ticket.id}
@@ -450,10 +550,10 @@ function TeamRequestPanel({
             );
           })
         ) : (
-          <div className="empty-incidents">
-            <CheckCircleIcon size={30} weight="light" aria-hidden="true" />
-            <strong>No open team requests</strong>
-            <span>Every support handoff has been confirmed and closed.</span>
+          <div className="empty-state">
+            <CheckCircleIcon size={28} weight="light" aria-hidden="true" />
+            <strong>No open requests</strong>
+            <span>Every team handoff has been closed.</span>
           </div>
         )}
       </div>
@@ -484,7 +584,7 @@ function NewIncidentDialog({
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (description.trim().length < 8) {
-      setError("Describe what the operator, sensor or supervisor observed.");
+      setError("Describe what the operator, sensor, or supervisor observed.");
       return;
     }
     onCreate(diagnoseIncident({ description, stationId, impact }));
@@ -501,16 +601,22 @@ function NewIncidentDialog({
       >
         <header>
           <div>
-            <h2 id="new-incident-title">Report line issue</h2>
-            <p>Record the observed condition and its current effect on production.</p>
+            <h2 id="new-incident-title">Report an issue</h2>
+            <p>
+              Enter what is happening now. The demo will create a diagnosis and
+              response plan.
+            </p>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close dialog">
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close report form"
+          >
             <XIcon size={18} aria-hidden="true" />
           </button>
         </header>
-
         <form onSubmit={submit}>
-          <label className="field full-field">
+          <label className="field">
             <span>What happened?</span>
             <textarea
               autoFocus
@@ -519,17 +625,18 @@ function NewIncidentDialog({
                 setDescription(event.target.value);
                 setError("");
               }}
-              placeholder="Example: The glass robot stopped after touching the fixture and will not restart."
+              placeholder="Example: The glass robot stopped and will not restart."
               rows={4}
             />
-            <small>Use observed facts. Sensor values can be added after the incident is created.</small>
             {error && <em className="field-error">{error}</em>}
           </label>
-
           <div className="form-row">
             <label className="field">
               <span>Station</span>
-              <select value={stationId} onChange={(event) => setStationId(event.target.value)}>
+              <select
+                value={stationId}
+                onChange={(event) => setStationId(event.target.value)}
+              >
                 {stations.map((station) => (
                   <option value={station.id} key={station.id}>
                     {station.id} · {station.name}
@@ -537,23 +644,30 @@ function NewIncidentDialog({
                 ))}
               </select>
             </label>
-
             <label className="field">
-              <span>Current effect</span>
-              <select value={impact} onChange={(event) => setImpact(event.target.value as Impact)}>
+              <span>Effect on production</span>
+              <select
+                value={impact}
+                onChange={(event) => setImpact(event.target.value as Impact)}
+              >
                 <option value="degraded">Line still running</option>
-                <option value="quality_hold">Quality hold</option>
+                <option value="quality_hold">Quality check needed</option>
                 <option value="line_stop">Line stopped</option>
                 <option value="safety_stop">Safety stop</option>
               </select>
             </label>
           </div>
-
           <footer>
-            <button type="button" className="secondary-button" onClick={onClose}>
-              Cancel
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+            >
+              Cancel report
             </button>
-            <button type="submit" className="primary-button">Create incident</button>
+            <button type="submit" className="primary-button">
+              Create issue
+            </button>
           </footer>
         </form>
       </section>
@@ -570,7 +684,9 @@ function DispatchDialog({
   onClose: () => void;
   onSend: (team: SupportTeam, request: string) => void;
 }) {
-  const [team, setTeam] = useState<SupportTeam>(() => recommendedTeamForIncident(incident));
+  const [team, setTeam] = useState<SupportTeam>(() =>
+    recommendedTeamForIncident(incident),
+  );
   const [request, setRequest] = useState(incident.containment);
 
   useEffect(() => {
@@ -597,26 +713,35 @@ function DispatchDialog({
       >
         <header>
           <div>
-            <h2 id="dispatch-title">Send team request</h2>
-            <p>{incident.stationId} · {incident.title}</p>
+            <h2 id="dispatch-title">Request a team</h2>
+            <p>
+              {incident.stationId} · {incident.title}
+            </p>
           </div>
-          <button className="icon-button" onClick={onClose} aria-label="Close dialog">
+          <button
+            className="icon-button"
+            onClick={onClose}
+            aria-label="Close team request form"
+          >
             <XIcon size={18} aria-hidden="true" />
           </button>
         </header>
-
         <form onSubmit={submit}>
           <label className="field">
-            <span>Responding team</span>
-            <select value={team} onChange={(event) => setTeam(event.target.value as SupportTeam)}>
+            <span>Team</span>
+            <select
+              value={team}
+              onChange={(event) => setTeam(event.target.value as SupportTeam)}
+            >
               {(Object.keys(teamLabels) as SupportTeam[]).map((value) => (
-                <option value={value} key={value}>{teamLabels[value]}</option>
+                <option value={value} key={value}>
+                  {teamLabels[value]}
+                </option>
               ))}
             </select>
           </label>
-
           <label className="field dispatch-request-field">
-            <span>Requested action</span>
+            <span>What do they need to do?</span>
             <textarea
               value={request}
               onChange={(event) => setRequest(event.target.value)}
@@ -624,17 +749,14 @@ function DispatchDialog({
               required
             />
           </label>
-
-          <div className="channel-note">
-            <BroadcastIcon size={18} aria-hidden="true" />
-            <span>
-              <strong>Reply target: {incident.severity === "critical" ? "2" : "5"} minutes</strong>
-              Prototype channel: team mobile alert and area radio queue.
-            </span>
-          </div>
-
           <footer>
-            <button type="button" className="secondary-button" onClick={onClose}>Cancel</button>
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={onClose}
+            >
+              Cancel request
+            </button>
             <button type="submit" className="primary-button">
               <BroadcastIcon size={16} weight="bold" aria-hidden="true" />
               Send request
@@ -647,24 +769,40 @@ function DispatchDialog({
 }
 
 export function LineControlDashboard() {
-  const [incidents, setIncidents] = useState<Incident[]>(initialIncidents);
-  const [tickets, setTickets] = useState<TeamTicket[]>(initialTickets);
-  const [selectedId, setSelectedId] = useState(initialIncidents[0].id);
-  const [railTab, setRailTab] = useState<RailTab>("incidents");
+  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [tickets, setTickets] = useState<TeamTicket[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [railView, setRailView] = useState<RailView>("issues");
   const [incidentDialogOpen, setIncidentDialogOpen] = useState(false);
-  const [dispatchIncidentId, setDispatchIncidentId] = useState<string | null>(null);
+  const [dispatchIncidentId, setDispatchIncidentId] = useState<string | null>(
+    null,
+  );
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [now, setNow] = useState<Date | null>(null);
-  const responseTimers = useRef<number[]>([]);
+  const [sceneVersion, setSceneVersion] = useState(0);
+  const [shiftTick, setShiftTick] = useState(0);
+  const [shiftRunning, setShiftRunning] = useState(false);
+  const [shiftStarted, setShiftStarted] = useState(false);
+  const [simulationSpeed, setSimulationSpeed] = useState(4);
+  const [reroutedIncidentIds, setReroutedIncidentIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const shiftTickRef = useRef(0);
+  const ticketsRef = useRef<TeamTicket[]>([]);
+  const injectedScenarioIdsRef = useRef<Set<string>>(new Set());
+  const responseTimers = useRef<Map<string, number[]>>(new Map());
+  const runGenerationRef = useRef(0);
+  const audioContextRef = useRef<AudioContext | null>(null);
 
-  useEffect(() => {
-    const updateClock = () => setNow(new Date());
-    const firstFrame = window.requestAnimationFrame(updateClock);
-    const timer = window.setInterval(updateClock, 1000);
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      window.clearInterval(timer);
-    };
+  const simulatedTime = useCallback(
+    () => formatShiftTime(shiftTickRef.current),
+    [],
+  );
+
+  const clearResponseTimers = useCallback(() => {
+    responseTimers.current.forEach((timers) => {
+      timers.forEach((timer) => window.clearTimeout(timer));
+    });
+    responseTimers.current.clear();
   }, []);
 
   useEffect(() => {
@@ -675,10 +813,90 @@ export function LineControlDashboard() {
 
   useEffect(
     () => () => {
-      responseTimers.current.forEach((timer) => window.clearTimeout(timer));
+      clearResponseTimers();
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
     },
-    [],
+    [clearResponseTimers],
   );
+
+  const injectScenario = useCallback((scenario: ShiftScenario) => {
+    if (injectedScenarioIdsRef.current.has(scenario.id)) return;
+    injectedScenarioIdsRef.current.add(scenario.id);
+
+    setIncidents((current) => {
+      if (current.some((incident) => incident.id === scenario.incident.id)) {
+        return current;
+      }
+      return [
+        {
+          ...scenario.incident,
+          ageMinutes: 0,
+          timeline: [...scenario.incident.timeline],
+        },
+        ...current,
+      ];
+    });
+    setSelectedId(scenario.incident.id);
+    setRailView("issues");
+    setShiftRunning(false);
+    playIncidentTone(audioContextRef.current);
+    setNotice({
+      id: Date.now(),
+      text: `${scenario.incident.stationId} alert · ${scenario.incident.title}`,
+      tone: "alert",
+    });
+
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(`Line 1 · ${scenario.incident.stationId}`, {
+        body: scenario.incident.title,
+        tag: scenario.id,
+      });
+    }
+  }, []);
+
+  const advanceSimulationTo = useCallback(
+    (requestedTick: number) => {
+      const nextTick = Math.min(SHIFT_TOTAL_TICKS, Math.max(0, requestedTick));
+      shiftTickRef.current = nextTick;
+      setShiftTick(nextTick);
+      setIncidents((current) =>
+        current.map((incident) => {
+          const scenario = getScenarioByIncidentId(incident.id);
+          return scenario && incident.status !== "resolved"
+            ? {
+                ...incident,
+                ageMinutes: Math.max(
+                  0,
+                  (nextTick - scenario.tick) * SHIFT_TICK_MINUTES,
+                ),
+              }
+            : incident;
+        }),
+      );
+
+      const scheduledScenario = getScheduledScenario(nextTick);
+      if (scheduledScenario) injectScenario(scheduledScenario);
+      if (nextTick === SHIFT_TOTAL_TICKS) {
+        setShiftRunning(false);
+        setNotice({
+          id: Date.now(),
+          text: "Shift complete · 14:00",
+          tone: "confirmed",
+        });
+      }
+    },
+    [injectScenario],
+  );
+
+  useEffect(() => {
+    if (!shiftRunning || shiftTick >= SHIFT_TOTAL_TICKS) return;
+    const timer = window.setTimeout(
+      () => advanceSimulationTo(shiftTick + 1),
+      1000 / simulationSpeed,
+    );
+    return () => window.clearTimeout(timer);
+  }, [advanceSimulationTo, shiftRunning, shiftTick, simulationSpeed]);
 
   const activeIncidents = useMemo(
     () =>
@@ -691,42 +909,73 @@ export function LineControlDashboard() {
     () => tickets.filter((ticket) => ticket.status !== "closed"),
     [tickets],
   );
-  const awaitingCount = openTickets.filter((ticket) => ticket.status === "awaiting_ack").length;
+  const awaitingCount = openTickets.filter(
+    (ticket) => ticket.status === "awaiting_ack",
+  ).length;
   const selected =
-    incidents.find((incident) => incident.id === selectedId) ?? activeIncidents[0];
+    incidents.find((incident) => incident.id === selectedId) ??
+    activeIncidents[0];
   const selectedTickets = selected
     ? tickets.filter((ticket) => ticket.incidentId === selected.id)
     : [];
-  const lineStopped = activeIncidents.some(
-    (incident) => incident.impact === "safety_stop" || incident.impact === "line_stop",
+  const otherIncidents = activeIncidents.filter(
+    (incident) => incident.id !== selected?.id,
   );
-  const criticalCount = activeIncidents.filter((incident) => incident.severity === "critical").length;
+  const telemetry = useMemo(
+    () =>
+      getShiftTelemetry(
+        shiftTick,
+        activeIncidents.map((incident) => incident.id),
+        { reroutedIncidentIds },
+      ),
+    [activeIncidents, reroutedIncidentIds, shiftTick],
+  );
+  const hasManualStop = activeIncidents.some(
+    (incident) =>
+      !getScenarioByIncidentId(incident.id) &&
+      (incident.impact === "safety_stop" || incident.impact === "line_stop"),
+  );
+  const hasManualIssue = activeIncidents.some(
+    (incident) => !getScenarioByIncidentId(incident.id),
+  );
+  const displayedLineState = hasManualStop
+    ? "stopped"
+    : telemetry.lineState === "running" && hasManualIssue
+      ? "degraded"
+      : telemetry.lineState;
+  const lineRatePerHour = hasManualStop ? 0 : telemetry.lineRatePerHour;
   const dispatchIncident =
     incidents.find((incident) => incident.id === dispatchIncidentId) ?? null;
+  const nextEventTick = shiftScenarios.find(
+    (scenario) => scenario.tick > shiftTick,
+  )?.tick;
 
-  const addIncidentActivity = (incidentId: string, label: string, detail: string) => {
-    setIncidents((current) =>
-      current.map((incident) =>
-        incident.id === incidentId
-          ? {
-              ...incident,
-              timeline: [
-                ...incident.timeline,
-                {
-                  id: incident.id + "-" + String(Date.now()),
-                  label,
-                  detail,
-                  time: currentTime(),
-                },
-              ],
-            }
-          : incident,
-      ),
-    );
-  };
+  const addIncidentActivity = useCallback(
+    (incidentId: string, label: string, detail: string) => {
+      setIncidents((current) =>
+        current.map((incident) =>
+          incident.id === incidentId
+            ? {
+                ...incident,
+                timeline: [
+                  ...incident.timeline,
+                  {
+                    id: `${incident.id}-${Date.now()}`,
+                    label,
+                    detail,
+                    time: simulatedTime(),
+                  },
+                ],
+              }
+            : incident,
+        ),
+      );
+    },
+    [simulatedTime],
+  );
 
-  const handleStatusChange = (status: IncidentStatus) => {
-    const changingId = selectedId;
+  const handleStatusChange = (changingId: string, status: IncidentStatus) => {
+    const scenario = getScenarioByIncidentId(changingId);
     setIncidents((current) =>
       current.map((incident) =>
         incident.id === changingId
@@ -736,15 +985,15 @@ export function LineControlDashboard() {
               timeline: [
                 ...incident.timeline,
                 {
-                  id: incident.id + "-" + String(Date.now()),
+                  id: `${incident.id}-${Date.now()}`,
                   label: statusLabels[status],
                   detail:
                     status === "resolved"
-                      ? "Supervisor verified the area and returned it to the production schedule."
+                      ? "The supervisor checked the area and returned it to the production schedule."
                       : status === "contained"
                         ? "Immediate containment recorded by the supervisor."
-                        : "Incident state updated by the supervisor.",
-                  time: currentTime(),
+                        : "Issue state updated by the supervisor.",
+                  time: simulatedTime(),
                 },
               ],
             }
@@ -752,282 +1001,500 @@ export function LineControlDashboard() {
       ),
     );
 
+    if (scenario?.rerouteRecommended && status === "contained") {
+      setReroutedIncidentIds((current) => {
+        const next = new Set(current);
+        next.add(changingId);
+        return next;
+      });
+      setNotice({
+        id: Date.now(),
+        text: `Vehicles rerouted to ${scenario.rerouteTarget} · production protected`,
+        tone: "confirmed",
+      });
+    }
+
     if (status === "resolved") {
-      const next = activeIncidents.find((incident) => incident.id !== changingId);
-      if (next) setSelectedId(next.id);
+      setReroutedIncidentIds((current) => {
+        const next = new Set(current);
+        next.delete(changingId);
+        return next;
+      });
+      const next = activeIncidents.find(
+        (incident) => incident.id !== changingId,
+      );
+      setSelectedId(next?.id ?? "");
     }
   };
 
   const createIncident = (incident: Incident) => {
-    setIncidents((current) => [incident, ...current]);
+    const createdAt = simulatedTime();
+    const simulatedIncident = {
+      ...incident,
+      timeline: incident.timeline.map((entry) => ({
+        ...entry,
+        time: createdAt,
+      })),
+    };
+    setIncidents((current) => [simulatedIncident, ...current]);
     setSelectedId(incident.id);
-    setRailTab("incidents");
+    setRailView("issues");
     setIncidentDialogOpen(false);
-  };
-
-  const dispatchTicket = (team: SupportTeam, request: string) => {
-    if (!dispatchIncident) return;
-    const ticket = createTeamTicket({ incident: dispatchIncident, team, request });
-    setTickets((current) => [ticket, ...current]);
-    addIncidentActivity(
-      dispatchIncident.id,
-      "Request sent",
-      ticket.id + " sent to " + teamLabels[team] + "; acknowledgement pending.",
-    );
-    setDispatchIncidentId(null);
-    setRailTab("requests");
     setNotice({
       id: Date.now(),
-      text: ticket.id + " sent to " + teamLabels[team] + " · awaiting confirmation",
-      tone: "sent",
+      text: `${incident.stationId} issue created`,
+      tone: "confirmed",
     });
+  };
 
+  const acknowledgeTicketAfterDelay = (ticket: TeamTicket, delay = 1400) => {
+    if (responseTimers.current.has(ticket.id)) return;
+    const generation = runGenerationRef.current;
     const timer = window.setTimeout(() => {
-      const acknowledgedAt = currentTime();
-      setTickets((current) =>
-        current.map((item) =>
-          item.id === ticket.id
+      if (generation !== runGenerationRef.current) return;
+      const latestTicket = ticketsRef.current.find(
+        (item) => item.id === ticket.id,
+      );
+      if (!latestTicket || latestTicket.status !== "awaiting_ack") {
+        responseTimers.current.delete(ticket.id);
+        return;
+      }
+      const acknowledgedAt = simulatedTime();
+      setTickets((current) => {
+        const next: TeamTicket[] = current.map((item) =>
+          item.id === ticket.id && item.status === "awaiting_ack"
             ? {
                 ...item,
                 status: "acknowledged",
-                assignee: responseNames[team],
-                etaMinutes: responseEtas[team],
+                assignee: responseNames[item.team],
+                etaMinutes: responseEtas[item.team],
                 updates: [
                   ...item.updates,
                   {
-                    id: item.id + "-ack",
+                    id: `${item.id}-ack-${Date.now()}`,
                     time: acknowledgedAt,
                     status: "acknowledged",
-                    author: responseNames[team],
-                    message: "Request accepted. Response is being coordinated now.",
+                    author: responseNames[item.team],
+                    message: "Request accepted. The team is responding.",
                   },
                 ],
               }
             : item,
-        ),
-      );
+        );
+        ticketsRef.current = next;
+        return next;
+      });
       addIncidentActivity(
-        dispatchIncident.id,
-        teamLabels[team] + " confirmed",
-        responseNames[team] + " accepted " + ticket.id + " with a " + String(responseEtas[team]) + " min ETA.",
+        ticket.incidentId,
+        `${teamLabels[ticket.team]} confirmed`,
+        `${responseNames[ticket.team]} accepted ${ticket.id} with a ${responseEtas[ticket.team]} min ETA.`,
       );
       setNotice({
         id: Date.now(),
-        text: teamLabels[team] + " accepted " + ticket.id + " · ETA " + String(responseEtas[team]) + " min",
+        text: `${teamLabels[ticket.team]} replied · ${responseEtas[ticket.team]} min ETA`,
         tone: "confirmed",
       });
-    }, 2800);
-    responseTimers.current.push(timer);
+
+      const readyTimer = window.setTimeout(
+        () => {
+          if (generation !== runGenerationRef.current) return;
+          const currentTicket = ticketsRef.current.find(
+            (item) => item.id === ticket.id,
+          );
+          if (!currentTicket || currentTicket.status !== "acknowledged") {
+            responseTimers.current.delete(ticket.id);
+            return;
+          }
+          const readyAt = simulatedTime();
+          setTickets((current) => {
+            const next: TeamTicket[] = current.map((item) =>
+              item.id === ticket.id && item.status === "acknowledged"
+                ? {
+                    ...item,
+                    status: "ready_for_check",
+                    etaMinutes: 0,
+                    updates: [
+                      ...item.updates,
+                      {
+                        id: `${item.id}-ready-${Date.now()}`,
+                        time: readyAt,
+                        status: "ready_for_check",
+                        author: responseNames[item.team],
+                        message:
+                          "Work complete. Waiting for the supervisor to check the station.",
+                      },
+                    ],
+                  }
+                : item,
+            );
+            ticketsRef.current = next;
+            return next;
+          });
+          addIncidentActivity(
+            ticket.incidentId,
+            `${teamLabels[ticket.team]} work complete`,
+            `${ticket.id} is ready for the supervisor check.`,
+          );
+          setNotice({
+            id: Date.now(),
+            text: `${teamLabels[ticket.team]} reports work complete · verify at the station`,
+            tone: "confirmed",
+          });
+          responseTimers.current.delete(ticket.id);
+        },
+        ticket.team === "maintenance" ? 3600 : 2400,
+      );
+      responseTimers.current.set(ticket.id, [timer, readyTimer]);
+    }, delay);
+    responseTimers.current.set(ticket.id, [timer]);
+  };
+
+  const dispatchTicket = (team: SupportTeam, request: string) => {
+    if (!dispatchIncident) return;
+    const ticket = createTeamTicket({
+      incident: dispatchIncident,
+      team,
+      request,
+      atTime: simulatedTime(),
+    });
+    setTickets((current) => {
+      const next = [ticket, ...current];
+      ticketsRef.current = next;
+      return next;
+    });
+    addIncidentActivity(
+      dispatchIncident.id,
+      "Request sent",
+      `${ticket.id} sent to ${teamLabels[team]}; reply pending.`,
+    );
+    setDispatchIncidentId(null);
+    setRailView("requests");
+    setNotice({
+      id: Date.now(),
+      text: `${teamLabels[team]} request sent · waiting for reply`,
+      tone: "sent",
+    });
+    acknowledgeTicketAfterDelay(ticket);
   };
 
   const followUpTicket = (ticketId: string) => {
-    setTickets((current) =>
-      current.map((ticket) =>
-        ticket.id === ticketId
+    const ticket = tickets.find((item) => item.id === ticketId);
+    if (!ticket) return;
+    setTickets((current) => {
+      const next: TeamTicket[] = current.map((item) =>
+        item.id === ticketId
           ? {
-              ...ticket,
+              ...item,
               priority: "urgent",
               updates: [
-                ...ticket.updates,
+                ...item.updates,
                 {
-                  id: ticket.id + "-follow-" + String(Date.now()),
-                  time: currentTime(),
-                  status: ticket.status,
+                  id: `${item.id}-follow-${Date.now()}`,
+                  time: simulatedTime(),
+                  status: item.status,
                   author: "Production supervisor",
-                  message: "Radio follow-up logged; acknowledgement still required.",
+                  message: "Radio follow-up logged. A reply is still required.",
                 },
               ],
             }
-          : ticket,
-      ),
-    );
-    setNotice({ id: Date.now(), text: "Radio follow-up logged · confirmation still pending", tone: "sent" });
+          : item,
+      );
+      ticketsRef.current = next;
+      return next;
+    });
+    setNotice({
+      id: Date.now(),
+      text: "Radio call logged · waiting for reply",
+      tone: "sent",
+    });
+    if (ticket.status === "awaiting_ack")
+      acknowledgeTicketAfterDelay(ticket, 900);
   };
 
   const verifyTicket = (ticketId: string) => {
     const ticket = tickets.find((item) => item.id === ticketId);
-    if (!ticket) return;
-    setTickets((current) =>
-      current.map((item) =>
-        item.id === ticketId
+    if (!ticket || ticket.status !== "ready_for_check") return;
+    setTickets((current) => {
+      const next: TeamTicket[] = current.map((item) =>
+        item.id === ticketId && item.status === "ready_for_check"
           ? {
               ...item,
               status: "closed",
               updates: [
                 ...item.updates,
                 {
-                  id: item.id + "-closed",
-                  time: currentTime(),
+                  id: `${item.id}-closed-${Date.now()}`,
+                  time: simulatedTime(),
                   status: "closed",
                   author: "Production supervisor",
-                  message: "Work verified at the station; team request closed.",
+                  message: "Work checked at the station. Request closed.",
                 },
               ],
             }
           : item,
-      ),
+      );
+      ticketsRef.current = next;
+      return next;
+    });
+    addIncidentActivity(
+      ticket.incidentId,
+      "Team work verified",
+      `${ticket.id} closed after the supervisor check.`,
     );
-    addIncidentActivity(ticket.incidentId, "Team work verified", ticket.id + " closed after supervisor check.");
-    setNotice({ id: Date.now(), text: ticket.id + " verified and closed", tone: "confirmed" });
+    setNotice({
+      id: Date.now(),
+      text: `${ticket.id} checked and closed`,
+      tone: "confirmed",
+    });
   };
 
   const openIncidentFromTicket = (incidentId: string) => {
     setSelectedId(incidentId);
-    setRailTab("incidents");
+    setRailView("issues");
   };
 
+  const armAudio = async () => {
+    if (!audioContextRef.current) {
+      audioContextRef.current = new AudioContext();
+    }
+    if (audioContextRef.current.state === "suspended") {
+      await audioContextRef.current.resume();
+    }
+  };
+
+  const toggleShift = async () => {
+    await armAudio();
+    setShiftStarted(true);
+    setShiftRunning((current) => !current);
+  };
+
+  const cycleSimulationSpeed = () => {
+    setSimulationSpeed((current) =>
+      current === 1 ? 4 : current === 4 ? 8 : 1,
+    );
+  };
+
+  const jumpToNextEvent = async () => {
+    if (nextEventTick === undefined) return;
+    await armAudio();
+    setShiftStarted(true);
+    setShiftRunning(false);
+    advanceSimulationTo(nextEventTick);
+  };
+
+  const closeIncidentDialog = useCallback(
+    () => setIncidentDialogOpen(false),
+    [],
+  );
+  const closeDispatchDialog = useCallback(
+    () => setDispatchIncidentId(null),
+    [],
+  );
+
   const resetScenario = () => {
-    responseTimers.current.forEach((timer) => window.clearTimeout(timer));
-    responseTimers.current = [];
-    setIncidents(initialIncidents);
-    setTickets(initialTickets);
-    setSelectedId(initialIncidents[0].id);
-    setRailTab("incidents");
+    runGenerationRef.current += 1;
+    clearResponseTimers();
+    injectedScenarioIdsRef.current.clear();
+    ticketsRef.current = [];
+    shiftTickRef.current = 0;
+    void audioContextRef.current?.close();
+    audioContextRef.current = null;
+    setIncidents([]);
+    setTickets([]);
+    setSelectedId("");
+    setRailView("issues");
+    setShiftTick(0);
+    setShiftRunning(false);
+    setShiftStarted(false);
+    setSimulationSpeed(4);
+    setReroutedIncidentIds(new Set());
+    setIncidentDialogOpen(false);
     setDispatchIncidentId(null);
     setNotice(null);
+    setSceneVersion((current) => current + 1);
   };
 
   return (
     <main className="control-shell">
       <header className="topbar">
-        <TeslaWordmark />
-        <div className="line-identity">
-          <span>Factory 01 · Shift B</span>
-          <strong>General assembly · Line 1</strong>
+        <div className="topbar-left">
+          <TeslaWordmark />
+          <div className="line-identity">
+            <strong>General Assembly 1</strong>
+            <span>Line 1 · Shift B</span>
+          </div>
         </div>
         <div className="topbar-status">
-          <span className={"line-state " + (lineStopped ? "is-stopped" : "is-running")}>
-            <span className="state-dot" />
-            {lineStopped ? "LINE STOPPED" : "LINE RUNNING"}
+          <span className="output-rate">
+            <small>Output</small>
+            <strong>
+              {lineRatePerHour} / {telemetry.targetLineRatePerHour} JPH
+            </strong>
           </span>
-          <span className="clock">
-            {now
-              ? new Intl.DateTimeFormat("en-GB", {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                  second: "2-digit",
-                  hour12: false,
-                }).format(now)
-              : "--:--:--"}
+          <span className={`line-state is-${displayedLineState}`}>
+            <span className="state-dot" aria-hidden="true" />
+            {displayedLineState === "stopped"
+              ? "Line stopped"
+              : displayedLineState === "rerouting"
+                ? "Running via Line 2"
+                : displayedLineState === "degraded"
+                  ? "Line constrained"
+                  : "Line running"}
           </span>
+          <span className="clock" title="Simulated shift time">
+            {formatShiftTime(shiftTick)}
+          </span>
+          <button
+            className="reset-button"
+            onClick={resetScenario}
+            title="Reset demo"
+          >
+            <ArrowCounterClockwiseIcon size={15} aria-hidden="true" />
+            <span>Reset demo</span>
+          </button>
         </div>
       </header>
 
-      <section className="metrics-strip" aria-label="Line metrics" tabIndex={0}>
-        <div className="metric-primary">
-          <span>Current output</span>
-          <strong>{lineStopped ? "0" : "39"}</strong>
-          <small>/ 44 JPH</small>
-        </div>
-        <div>
-          <span>Shift output</span>
-          <strong>286</strong>
-          <small>/ 344 plan</small>
-        </div>
-        <div>
-          <span>Open incidents</span>
-          <strong>{activeIncidents.length}</strong>
-          <small>{criticalCount} stops line</small>
-        </div>
-        <div className={awaitingCount > 0 ? "metric-attention" : undefined}>
-          <span>Team replies</span>
-          <strong>{awaitingCount}</strong>
-          <small>/ {openTickets.length} awaiting</small>
-        </div>
-      </section>
-
       <div className="workspace">
-        <section className="twin-panel" aria-label="3D assembly line">
-          <div className="scene-toolbar">
-            <div>
-              <CubeIcon size={16} aria-hidden="true" />
-              <span>General Assembly 1</span>
-              <small>Concept geometry · mock telemetry</small>
-            </div>
-            <button className="scene-action" onClick={resetScenario}>
-              <ArrowCounterClockwiseIcon size={15} aria-hidden="true" />
-              Reset demo
-            </button>
+        <section
+          className="twin-panel"
+          aria-label="3D view of General Assembly Line 1"
+        >
+          <div className="scene-caption">
+            <strong>Line 1</strong>
+            <span>5 cells reporting · Tick {shiftTick}</span>
           </div>
-
           <FactoryTwin
+            key={sceneVersion}
             incidents={activeIncidents}
             selectedId={selectedId}
+            vehiclesRerouted={reroutedIncidentIds.size > 0}
             onSelectIncident={(id) => {
               setSelectedId(id);
-              setRailTab("incidents");
+              setRailView("issues");
             }}
+          />
+          <ShiftSimulationDock
+            tick={shiftTick}
+            time={formatShiftTime(shiftTick)}
+            progress={shiftTick / SHIFT_TOTAL_TICKS}
+            running={shiftRunning}
+            started={shiftStarted}
+            speed={simulationSpeed}
+            telemetry={{
+              ...telemetry,
+              lineState: displayedLineState,
+              lineRatePerHour,
+            }}
+            nextEventTick={nextEventTick}
+            rerouted={reroutedIncidentIds.size > 0}
+            onToggle={toggleShift}
+            onCycleSpeed={cycleSimulationSpeed}
+            onNextEvent={jumpToNextEvent}
+            onOpenTelemetry={() => setRailView("telemetry")}
           />
         </section>
 
-        <aside className="operations-rail">
-          <header className="operations-header">
-            <div>
-              <span className="eyebrow">Shift control</span>
-              <h1>Operations</h1>
-            </div>
-            <button className="new-incident-button" onClick={() => setIncidentDialogOpen(true)}>
-              <PlusIcon size={16} weight="bold" aria-hidden="true" />
-              Report issue
-            </button>
-          </header>
-
-          <nav className="rail-tabs" aria-label="Operations view">
-            <button
-              className={railTab === "incidents" ? "is-active" : ""}
-              aria-pressed={railTab === "incidents"}
-              onClick={() => setRailTab("incidents")}
-            >
-              Incidents <span>{activeIncidents.length}</span>
-            </button>
-            <button
-              className={railTab === "requests" ? "is-active" : ""}
-              aria-pressed={railTab === "requests"}
-              onClick={() => setRailTab("requests")}
-            >
-              Team requests <span>{openTickets.length}</span>
-              {awaitingCount > 0 && <i aria-label={String(awaitingCount) + " awaiting confirmation"} />}
-            </button>
-          </nav>
+        <aside
+          className={`operations-rail${railView === "telemetry" ? " is-telemetry" : ""}`}
+        >
+          {railView !== "telemetry" && (
+            <header className="operations-header">
+              <div>
+                {railView === "requests" && (
+                  <button
+                    className="back-button"
+                    onClick={() => setRailView("issues")}
+                  >
+                    ← Line issues
+                  </button>
+                )}
+                <h1>
+                  {railView === "issues" ? "Line issues" : "Team follow-up"}
+                </h1>
+                <p>
+                  {railView === "issues"
+                    ? `${activeIncidents.length} open · ${awaitingCount} waiting for a reply`
+                    : "Track every request until the receiving team responds."}
+                </p>
+              </div>
+              {railView === "issues" && (
+                <button
+                  className="new-incident-button"
+                  onClick={() => setIncidentDialogOpen(true)}
+                >
+                  <PlusIcon size={16} weight="bold" aria-hidden="true" />
+                  Report issue
+                </button>
+              )}
+            </header>
+          )}
 
           <div className="rail-view">
-            {railTab === "incidents" ? (
-              <div className="incidents-view">
-                <div className="incident-queue" aria-label="Open incidents">
-                  {activeIncidents.length > 0 ? (
-                    activeIncidents.map((incident) => (
-                      <IncidentCard
-                        incident={incident}
-                        selected={incident.id === selectedId}
-                        tickets={tickets.filter((ticket) => ticket.incidentId === incident.id)}
-                        onSelect={() => setSelectedId(incident.id)}
-                        key={incident.id}
-                      />
-                    ))
-                  ) : (
-                    <div className="empty-incidents">
-                      <CheckCircleIcon size={28} weight="light" aria-hidden="true" />
-                      <strong>No open incidents</strong>
-                      <span>The line has no unresolved events.</span>
-                    </div>
-                  )}
-                </div>
-
-                {selected ? (
-                  <IncidentDetail
+            {railView === "telemetry" ? (
+              <TelemetryPanel
+                snapshot={{
+                  ...telemetry,
+                  lineState: displayedLineState,
+                  lineRatePerHour,
+                }}
+                activeIncidentIds={activeIncidents.map(
+                  (incident) => incident.id,
+                )}
+                onBack={() => setRailView("issues")}
+              />
+            ) : railView === "issues" ? (
+              activeIncidents.length > 0 && selected ? (
+                <div className="issues-view">
+                  <IncidentFocus
                     incident={selected}
                     tickets={selectedTickets}
                     onStatusChange={handleStatusChange}
                     onDispatch={() => setDispatchIncidentId(selected.id)}
-                    onViewRequests={() => setRailTab("requests")}
+                    onViewRequests={() => setRailView("requests")}
+                    onFollowUp={followUpTicket}
+                    onVerify={verifyTicket}
                   />
-                ) : (
-                  <div className="no-selection">
-                    <FactoryIcon size={26} aria-hidden="true" />
-                    <p>Select an incident to coordinate the response.</p>
-                  </div>
-                )}
-              </div>
+                  {otherIncidents.length > 0 && (
+                    <section
+                      className="other-issues"
+                      aria-label="Other open issues"
+                    >
+                      <h2>Other issues</h2>
+                      {otherIncidents.map((incident) => (
+                        <IssueRow
+                          key={incident.id}
+                          incident={incident}
+                          tickets={tickets.filter(
+                            (ticket) => ticket.incidentId === incident.id,
+                          )}
+                          onSelect={() => setSelectedId(incident.id)}
+                        />
+                      ))}
+                    </section>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state healthy-state">
+                  <CheckCircleIcon
+                    size={32}
+                    weight="light"
+                    aria-hidden="true"
+                  />
+                  <strong>
+                    {shiftStarted
+                      ? "Line 1 is running normally"
+                      : "Shift ready"}
+                  </strong>
+                  <span>5 cells reporting. No action needed.</span>
+                  <button
+                    className="secondary-button"
+                    onClick={() => setRailView("telemetry")}
+                  >
+                    View live data
+                  </button>
+                </div>
+              )
             ) : (
               <TeamRequestPanel
                 tickets={tickets}
@@ -1041,14 +1508,9 @@ export function LineControlDashboard() {
         </aside>
       </div>
 
-      <button className="mobile-report" onClick={() => setIncidentDialogOpen(true)}>
-        <SirenIcon size={18} weight="bold" aria-hidden="true" />
-        Report issue
-      </button>
-
       {incidentDialogOpen && (
         <NewIncidentDialog
-          onClose={() => setIncidentDialogOpen(false)}
+          onClose={closeIncidentDialog}
           onCreate={createIncident}
         />
       )}
@@ -1056,14 +1518,20 @@ export function LineControlDashboard() {
         <DispatchDialog
           key={dispatchIncident.id}
           incident={dispatchIncident}
-          onClose={() => setDispatchIncidentId(null)}
+          onClose={closeDispatchDialog}
           onSend={dispatchTicket}
         />
       )}
       {notice && (
-        <div className={"response-toast toast-" + notice.tone} role="status" key={notice.id}>
+        <div
+          className={`response-toast toast-${notice.tone}`}
+          role={notice.tone === "alert" ? "alert" : "status"}
+          key={notice.id}
+        >
           {notice.tone === "confirmed" ? (
             <CheckCircleIcon size={18} weight="bold" aria-hidden="true" />
+          ) : notice.tone === "alert" ? (
+            <ShieldWarningIcon size={18} weight="fill" aria-hidden="true" />
           ) : (
             <BroadcastIcon size={18} weight="bold" aria-hidden="true" />
           )}

@@ -1,5 +1,5 @@
-import { LineControlDashboard } from "@/components/line-control-dashboard";
+import { PriorityDashboard } from "@/components/priority-dashboard";
 
 export default function Home() {
-  return <LineControlDashboard />;
+  return <PriorityDashboard />;
 }

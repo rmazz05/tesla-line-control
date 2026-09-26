@@ -97,7 +97,7 @@ export const initialIncidents: Incident[] = [
   {
     id: "INC-4271",
     stationId: "GA-24",
-    title: "Scanner field remains blocked",
+    title: "Scanner area blocked",
     code: "SAFE-SCN-24",
     severity: "critical",
     impact: "safety_stop",
@@ -106,13 +106,13 @@ export const initialIncidents: Incident[] = [
     ageMinutes: 2,
     source: "Safety PLC · Scanner 24-B",
     description:
-      "The area is clear, but safety scanner field B remains occupied. The glass fitting robot is inhibited and the line cannot release the next body.",
+      "Scanner field B still reads occupied. The glass fitting robot is stopped, and the next body cannot enter.",
     likelyCause:
-      "A fixture edge, loose cable or misaligned scanner is intruding into the protected field.",
+      "An object, loose cable or scanner misalignment may be blocking the field.",
     containment:
-      "Keep the cell stopped. Verify no personnel are inside, clear the protected field and confirm both scanner channels before reset.",
+      "Keep the cell stopped. Confirm the area is clear, remove anything blocking the scanner, and wait for Maintenance to confirm a safe reset.",
     permanentFix:
-      "Remove the obstruction or realign the scanner, then verify its field map and record a successful two-channel safety test.",
+      "Remove the blockage or realign the scanner. Check the field map and complete a two-channel safety test.",
     owner: "Maintenance · Electrical",
     eta: { low: 5, median: 7, high: 11 },
     history: {
@@ -144,7 +144,7 @@ export const initialIncidents: Incident[] = [
   {
     id: "INC-4268",
     stationId: "GA-32",
-    title: "Torque below lower limit",
+    title: "Wheel torque check failed",
     code: "TRQ-LOW-07",
     severity: "high",
     impact: "quality_hold",
@@ -153,13 +153,13 @@ export const initialIncidents: Incident[] = [
     ageMinutes: 5,
     source: "Torque tool · TT-32-04",
     description:
-      "Front-left wheel tool recorded 92 Nm against a 118–122 Nm specification on unit 7YJ384.",
+      "The front-left wheel on unit 7YJ384 measured 92 Nm. The required range is 118–122 Nm.",
     likelyCause:
-      "Socket not fully seated or tool calibration drift after the last battery change.",
+      "The socket may not have been fully seated, or the tool may need calibration after its battery change.",
     containment:
-      "Hold unit 7YJ384. Re-torque all four wheels with backup tool TT-32-02 and verify the next production unit.",
+      "Hold unit 7YJ384. Re-torque all four wheels with backup tool TT-32-02, then check the next unit.",
     permanentFix:
-      "Run the calibration fixture check. Remove TT-32-04 from service if the verification result is outside ±1.5%.",
+      "Check TT-32-04 on the calibration fixture. Remove it from service if the result is outside ±1.5%.",
     owner: "Quality · Final assembly",
     eta: { low: 3, median: 5, high: 8 },
     history: {
@@ -191,7 +191,7 @@ export const initialIncidents: Incident[] = [
   {
     id: "INC-4264",
     stationId: "GA-18",
-    title: "Dashboard cart late to sequence",
+    title: "Dashboard delivery late",
     code: "MAT-SEQ-18",
     severity: "medium",
     impact: "degraded",
@@ -200,13 +200,13 @@ export const initialIncidents: Incident[] = [
     ageMinutes: 11,
     source: "Line-side delivery scan",
     description:
-      "The dashboard cart for unit 7YJ391 is four minutes late. Two correctly sequenced jobs remain in the line-side buffer.",
+      "The dashboard cart for unit 7YJ391 is four minutes late. Two correct jobs remain in the line-side buffer.",
     likelyCause:
-      "The cart likely missed its supermarket release scan or the tugger route is delayed between zones.",
+      "The release scan may be missing, or the tugger may be delayed between zones.",
     containment:
-      "Consume the two buffered jobs, contact the route driver and verify the arriving cart ID before installation.",
+      "Use the two buffered jobs. Contact the route driver and confirm the arriving cart ID before installation.",
     permanentFix:
-      "Reconcile the missing replenishment scan and confirm the cart returns to the correct sequence before closing the event.",
+      "Find the missing replenishment scan and return the cart to the correct sequence.",
     owner: "Material flow · Route 3",
     eta: { low: 6, median: 9, high: 14 },
     history: {
@@ -291,17 +291,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     ])
   ) {
     result = {
-      title: "Safety circuit requires verification",
+      title: "Safety device open",
       code: "SAFE-MANUAL",
       severity: "critical",
       impact: "safety_stop",
       priorityScore: 99,
       likelyCause:
-        "An open or contradictory safety input is preventing a safe restart.",
+        "A safety device is open, or its two signals do not agree.",
       containment:
-        "Stop the affected area, verify personnel are clear and inspect every open safety device before attempting a reset.",
+        "Keep the area stopped. Confirm everyone is clear and check each open safety device before reset.",
       permanentFix:
-        "Repair the failed safety device or wiring, then complete the documented two-channel validation.",
+        "Repair the device or wiring, then complete the required two-channel test.",
       eta: { low: 5, median: 9, high: 16 },
       history: {
         cases: 28,
@@ -319,17 +319,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["torque", "bolt", "screw", "tighten", "wheel", "fastener"])
   ) {
     result = {
-      title: "Fastening result out of specification",
+      title: "Fastening check failed",
       code: "TRQ-MANUAL",
       severity: input.impact === "line_stop" ? "critical" : "high",
       impact: input.impact,
       priorityScore: input.impact === "line_stop" ? 94 : 85,
       likelyCause:
-        "Tool engagement, program selection or calibration drift are the most likely causes.",
+        "The tool may not have seated correctly, may have used the wrong program or may need calibration.",
       containment:
-        "Hold the affected unit and repeat the operation with a verified backup tool. Check the preceding unit if traceability is incomplete.",
+        "Hold the unit and repeat the operation with a verified backup tool. Check the previous unit if its result is missing.",
       permanentFix:
-        "Run the tool against the calibration fixture and inspect the socket before returning it to production.",
+        "Check the tool on the calibration fixture and inspect the socket before returning it to production.",
       eta: { low: 3, median: 6, high: 10 },
       history: {
         cases: 47,
@@ -347,17 +347,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["glass", "windshield", "windscreen", "adhesive", "urethane"])
   ) {
     result = {
-      title: "Glass fit requires verification",
+      title: "Glass fit check failed",
       code: "GLS-MANUAL",
       severity: input.impact === "line_stop" ? "critical" : "high",
       impact: input.impact === "degraded" ? "quality_hold" : input.impact,
       priorityScore: input.impact === "line_stop" ? 93 : 83,
       likelyCause:
-        "Locator seating, vacuum grip or adhesive-bead continuity should be checked before changing the robot path.",
+        "The glass locator, vacuum grip or adhesive bead may be at fault.",
       containment:
-        "Hold the affected body, prevent the next automatic cycle and inspect glass position and bead continuity without disturbing the evidence.",
+        "Hold the body and stop the next automatic cycle. Check the glass position and adhesive bead.",
       permanentFix:
-        "Correct the locator or applicator issue, verify the robot tool centre point and release only after one supervised conforming fit.",
+        "Correct the locator or applicator fault. Check the robot position and supervise one good fit before release.",
       eta: { low: 7, median: 12, high: 20 },
       history: {
         cases: 22,
@@ -375,17 +375,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["paint", "scratch", "finish", "dust", "colour", "color"])
   ) {
     result = {
-      title: "Surface quality deviation reported",
+      title: "Surface defect reported",
       code: "QLT-SURFACE",
       severity: input.impact === "line_stop" ? "critical" : "high",
       impact: input.impact === "degraded" ? "quality_hold" : input.impact,
       priorityScore: input.impact === "line_stop" ? 92 : 82,
       likelyCause:
-        "Recent booth conditions, handling contact or contaminated tooling should be checked first.",
+        "Booth conditions, handling contact or dirty tooling may have caused the defect.",
       containment:
-        "Segregate the affected unit and inspect the previous three units before allowing further bodies to leave the area.",
+        "Hold the affected unit and inspect the previous three units before releasing more bodies.",
       permanentFix:
-        "Confirm the defect origin, remove the contamination or contact point and document the first verified good unit.",
+        "Find the source, remove the dirt or contact point and record the first good unit.",
       eta: { low: 7, median: 12, high: 21 },
       history: {
         cases: 31,
@@ -403,17 +403,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["roller", "vibration", "pulling", "brake drag", "dyno", "dynamometer"])
   ) {
     result = {
-      title: "Roller test deviation",
+      title: "Roller test failed",
       code: "EOL-DYN-MANUAL",
       severity: input.impact === "line_stop" ? "critical" : "high",
       impact: input.impact === "degraded" ? "quality_hold" : input.impact,
       priorityScore: input.impact === "line_stop" ? 92 : 80,
       likelyCause:
-        "Vehicle restraint alignment, tire pressure, brake drag or a roller-speed sensor should be checked in that order.",
+        "Check vehicle alignment, tire pressure, brake drag and the roller speed sensor, in that order.",
       containment:
-        "Stop the test, secure the vehicle and place it on hold. Inspect the test bed before running another production vehicle.",
+        "Stop the test, secure the vehicle and place it on hold. Check the test bed before testing another vehicle.",
       permanentFix:
-        "Correct the mechanical or sensor condition, validate the bed with a reference vehicle and repeat the affected vehicle test.",
+        "Correct the fault, check the bed with a reference vehicle and retest the affected vehicle.",
       eta: { low: 8, median: 15, high: 24 },
       history: {
         cases: 19,
@@ -431,17 +431,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["robot", "weld", "axis", "servo", "collision", "gripper"])
   ) {
     result = {
-      title: "Robot cell fault blocks automatic cycle",
+      title: "Robot cell stopped",
       code: "RBT-MANUAL",
       severity: input.impact === "degraded" ? "high" : "critical",
       impact: input.impact === "degraded" ? "line_stop" : input.impact,
       priorityScore: 95,
       likelyCause:
-        "Axis limit, tool collision or a missing process permissive is preventing the next cycle.",
+        "The robot may have reached a limit, hit an obstruction or lost a required ready signal.",
       containment:
-        "Hold automatic restart. Confirm the cell is clear, preserve the fault state and check the robot pendant alarm before jogging.",
+        "Block automatic restart. Confirm the cell is clear and read the pendant alarm before moving the robot.",
       permanentFix:
-        "Correct the physical obstruction or failed permissive, verify the tool centre point and run one supervised dry cycle.",
+        "Remove the obstruction or restore the ready signal. Check the tool position and supervise one dry cycle.",
       eta: { low: 6, median: 11, high: 20 },
       history: {
         cases: 36,
@@ -459,17 +459,17 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     includesAny(text, ["part", "material", "empty", "missing", "shortage", "rack"])
   ) {
     result = {
-      title: "Material supply interruption",
+      title: "Material delivery delayed",
       code: "MAT-MANUAL",
       severity: input.impact === "line_stop" ? "critical" : "medium",
       impact: input.impact,
       priorityScore: input.impact === "line_stop" ? 91 : 67,
       likelyCause:
-        "The line-side container has not been replenished or the expected delivery is delayed.",
+        "The line-side container was not refilled, or the delivery is late.",
       containment:
-        "Confirm remaining pieces, call the route driver and check the nearest supermarket location for an approved substitute container.",
+        "Count the remaining parts, call the route driver and check for an approved replacement container.",
       permanentFix:
-        "Restore the delivery route and reconcile the scan that failed to trigger replenishment.",
+        "Restore the delivery route and find the scan that failed to trigger replenishment.",
       eta: { low: 4, median: 8, high: 14 },
       history: {
         cases: 54,
@@ -485,7 +485,7 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
     };
   } else {
     result = {
-      title: input.description.trim().slice(0, 62) || "Unclassified station fault",
+      title: input.description.trim().slice(0, 62) || "Station fault needs inspection",
       code: "OPS-MANUAL",
       severity:
         input.impact === "safety_stop" || input.impact === "line_stop"
@@ -503,11 +503,11 @@ export function diagnoseIncident(input: DiagnoseInput): Incident {
               ? 78
               : 55,
       likelyCause:
-        "The report does not match a known fault family closely enough for a specific diagnosis.",
+        "The report does not match a known fault closely enough to name a cause.",
       containment:
-        "Inspect the station, preserve the current fault state and confirm whether safety, quality or throughput is affected.",
+        "Inspect the station and keep the current fault visible. Check whether safety, quality or output is affected.",
       permanentFix:
-        "Assign the correct fault family after inspection and record the verified cause for future matching.",
+        "Record the fault type and confirmed cause after inspection.",
       eta: { low: 8, median: 14, high: 25 },
       history: {
         cases: 7,

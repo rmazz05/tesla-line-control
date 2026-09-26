@@ -2,6 +2,7 @@ import type { Incident } from "./line-data";
 
 export type SupportTeam =
   | "maintenance"
+  | "tool_crib"
   | "quality"
   | "material_flow"
   | "production_planning"
@@ -42,6 +43,7 @@ export type TeamTicket = {
 
 export const teamLabels: Record<SupportTeam, string> = {
   maintenance: "Maintenance",
+  tool_crib: "Tool crib",
   quality: "Quality",
   material_flow: "Material flow",
   production_planning: "Production planning",
@@ -73,6 +75,19 @@ export function recommendedTeamForIncident(incident: Incident): SupportTeam {
 
   if (
     includesAny(text, [
+      "broken tool",
+      "replacement tool",
+      "screwdriver",
+      "tool crib",
+      "tool offline",
+      "backup tool",
+    ])
+  ) {
+    return "tool_crib";
+  }
+
+  if (
+    includesAny(text, [
       "cart",
       "material",
       "delivery",
@@ -100,14 +115,16 @@ export function recommendedTeamForIncident(incident: Incident): SupportTeam {
       "mechanical",
       "tool",
       "sensor",
+      "roller",
+      "vibration",
+      "dynamometer",
+      "dyn-",
     ])
   ) {
     return "maintenance";
   }
 
-  if (
-    includesAny(text, ["cycle time", "program", "process", "calibration"])
-  ) {
+  if (includesAny(text, ["cycle time", "program", "process", "calibration"])) {
     return "engineering";
   }
 
@@ -159,7 +176,8 @@ export const initialTickets: TeamTicket[] = [
         time: "18:42:23",
         status: "awaiting_ack",
         author: "M. Rossi · Production supervisor",
-        message: "Recovery-planning request sent with the current buffer count.",
+        message:
+          "Recovery-planning request sent with the current buffer count.",
       },
       {
         id: "upd-1093-2",
@@ -204,7 +222,8 @@ export const initialTickets: TeamTicket[] = [
         time: "18:44:08",
         status: "ready_for_check",
         author: "S. Kaya · Quality",
-        message: "Four-wheel re-torque completed. Results are ready for supervisor review.",
+        message:
+          "Four-wheel re-torque completed. Results are ready for supervisor review.",
       },
     ],
   },
@@ -246,6 +265,7 @@ export type CreateTeamTicketInput = {
   team?: SupportTeam;
   request?: string;
   requestedBy?: string;
+  atTime?: string;
 };
 
 const currentTime = () =>
@@ -264,9 +284,7 @@ const createTicketId = () => {
   return `REQ-${suffix}`;
 };
 
-const priorityForIncident = (
-  incident: Incident,
-): TeamTicket["priority"] => {
+const priorityForIncident = (incident: Incident): TeamTicket["priority"] => {
   if (incident.severity === "critical") return "urgent";
   if (incident.severity === "high") return "high";
   return "normal";
@@ -277,9 +295,10 @@ export function createTeamTicket({
   team = recommendedTeamForIncident(incident),
   request,
   requestedBy = "Production supervisor",
+  atTime,
 }: CreateTeamTicketInput): TeamTicket {
   const id = createTicketId();
-  const sentAt = currentTime();
+  const sentAt = atTime || currentTime();
   const teamLabel = teamLabels[team];
 
   return {
