@@ -1,5 +1,10 @@
 # Current decision policy
 
+The main supervisor workspace now uses the action and ownership policy documented
+in [SUPERVISOR_ATTENTION.md](./SUPERVISOR_ATTENTION.md). The rules below remain the
+underlying incident-evidence and legacy repair-order policy. They do not describe
+the main screen's attention order, acknowledgment workflow, or explicit restart.
+
 The implementation is in `src/lib/priority/policy.ts`; case retrieval and evidence assessment are in `case-library.ts`. The same decision object drives sorting, queue actions, report reasoning and export. The model cannot write a score, case record, numerical forecast or containment confirmation.
 
 Ordered gates:

@@ -1,10 +1,25 @@
 import { getRankedIncidents } from "./engine";
 import { getIncidentPresentation, getIncidentTitle } from "./presentation";
 import type { SimulationState } from "./types";
+import { getAttentionPlan } from "./attention";
 
 export interface LineActivity { id: string; minute: number; title: string; detail: string; incidentId: string; kind: "reported" | "repairing" | "resolved" | "priority" | "contained"; }
 /** Announce a meaningful transition, never every clock tick. */
 export function getLineActivity(before: SimulationState, after: SimulationState): LineActivity | null {
+  if (after.supervisor) {
+    const returned = after.incidents.find(i => i.response?.readyAt != null && before.incidents.find(old => old.id === i.id)?.response?.readyAt == null);
+    const arrived = after.incidents.find(i => !before.incidents.some(old => old.id === i.id));
+    const log = after.supervisor.log.length > (before.supervisor?.log.length ?? 0) ? after.supervisor.log.at(-1) : null;
+    const oldPlan = getAttentionPlan(before, getRankedIncidents(before));
+    const plan = getAttentionPlan(after, getRankedIncidents(after));
+    const newFollowup = plan.actions.find(a => a.kind === "follow-up" && !oldPlan.actions.some(old => old.id === a.id));
+    const interrupt = plan.interruption && plan.interruption !== oldPlan.interruption;
+    if (!returned && !arrived && !log && !newFollowup && !interrupt) return null;
+    const incidentId = returned?.id ?? arrived?.id ?? newFollowup?.incidentId ?? plan.next?.incidentId ?? after.incidents.at(-1)?.id ?? "area";
+    return { id: `supervisor-${after.minute}-${after.supervisor.log.length}-${incidentId}`, minute: after.minute, incidentId,
+      kind: arrived ? "reported" : "priority", title: returned ? "Returned work needs verification" : arrived ? "New incident reported" : log ? "Supervisor action recorded" : interrupt ? "Attention needed now" : "Response checkpoint missed",
+      detail: returned ? `${returned.assessment.stationId}: check the returned work before release.` : arrived ? `${arrived.assessment.stationId ?? "Unknown location"}: ${getIncidentTitle(arrived.assessment)}` : log?.text ?? plan.interruption ?? newFollowup!.reason };
+  }
   const arrived = after.incidents.filter((i) => !before.incidents.some((old) => old.id === i.id));
   const changed = after.incidents.filter((i) => before.incidents.some((old) => old.id === i.id && old.status !== i.status));
   const contained = after.incidents.find(i => i.containmentConfirmedAtMinute != null && before.incidents.some(old => old.id === i.id && old.containmentConfirmedAtMinute == null));

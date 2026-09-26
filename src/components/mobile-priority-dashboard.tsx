@@ -1,18 +1,20 @@
 "use client";
 
 import {
-  ArrowRightIcon, BellSimpleIcon, CheckCircleIcon, FactoryIcon,
+  ArrowRightIcon, BellSimpleIcon, DotsThreeIcon, FactoryIcon,
   ListNumbersIcon, PlusIcon, XIcon,
 } from "@phosphor-icons/react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { STATIONS } from "@/lib/priority/config";
-import { getIncidentPresentation, getIncidentTitle } from "@/lib/priority/presentation";
+import { getIncidentTitle } from "@/lib/priority/presentation";
 import { getStationEffect, getStationStatus } from "@/lib/priority/station-effect";
 import type { LineActivity } from "@/lib/priority/activity";
 import type { PriorityIncident, RankedIncident, SimulationState, StationReading } from "@/lib/priority/types";
 import styles from "./mobile-priority-dashboard.module.css";
 
 export interface MobilePriorityDashboardProps {
+  supervisorContent: ReactNode;
+  attentionCount: number;
   simulation: SimulationState;
   ranking: RankedIncident[];
   readings: StationReading[];
@@ -23,7 +25,7 @@ export interface MobilePriorityDashboardProps {
   onDismissNotice: () => void;
   onOpenReport: (id: string) => void;
   onOpenIntake: () => void;
-  onOpenControls: () => void;
+  onOpenWorkspace: () => void;
 }
 
 type View = "incidents" | "line" | "activity";
@@ -38,9 +40,9 @@ type ActivityEntry = {
 };
 
 const navigation = [
-  { id: "incidents", label: "Incidents", Icon: ListNumbersIcon },
+  { id: "incidents", label: "Priorities", Icon: ListNumbersIcon },
   { id: "line", label: "Line", Icon: FactoryIcon },
-  { id: "activity", label: "Updates", Icon: BellSimpleIcon },
+  { id: "activity", label: "Activity", Icon: BellSimpleIcon },
 ] as const;
 
 function timecode(minutes: number) {
@@ -58,12 +60,20 @@ function getActivityEntries(simulation: SimulationState): ActivityEntry[] {
       : entry.text.startsWith("Maintenance started") ? "repairing"
         : entry.text.startsWith("Repair and checks completed") || entry.text.startsWith("Supervisor marked") ? "resolved"
           : "update";
-    const label = kind === "reported" ? "Incident reported" : kind === "repairing" ? "Repair started" : kind === "resolved" ? "Incident resolved" : "Response updated";
+    const label = kind === "reported" ? "Incident reported" : kind === "repairing" ? "Repair started" : kind === "resolved" ? "Incident resolved"
+      : entry.text.includes("confirmed they are acting.") ? "Ownership confirmed"
+        : entry.text.includes("contacted by phone/radio.") ? "Team contacted"
+          : entry.text.startsWith("Supervisor confirmed equipment isolation") ? "Equipment containment confirmed"
+            : entry.text.startsWith("Supervisor confirmed affected product") ? "Product containment confirmed"
+              : entry.text.startsWith("Team returned") || entry.text.startsWith("Responsible team returned") ? "Ready for verification"
+                : entry.text.startsWith("Follow-up recorded:") ? "Follow-up recorded"
+                  : entry.text.startsWith("Demo hold rule:") ? "Equipment hold applied"
+                    : entry.text.startsWith("Equipment location confirmed:") ? "Location confirmed" : "Response updated";
     return [{ id: `${incident.id}-history-${index}`, minute: entry.minute, incident, label, text: entry.text, kind }];
   }));
   for (const [index, change] of simulation.rankChanges.entries()) {
     // Arrival and resolution already appear in the incident timeline above.
-    if (change.from === null || change.to === null) continue;
+    if (simulation.supervisor || change.from === null || change.to === null) continue;
     const incident = simulation.incidents.find((item) => item.id === change.incidentId);
     if (!incident) continue;
     // Repairing incidents retain engine ranks but no longer belong to the waiting order.
@@ -74,28 +84,29 @@ function getActivityEntries(simulation: SimulationState): ActivityEntry[] {
 }
 
 export function MobilePriorityDashboard({
-  simulation, ranking, readings, activity, running, pending, notice,
-  onDismissNotice, onOpenReport, onOpenIntake, onOpenControls,
+  simulation, ranking, readings, activity, running, pending, notice, supervisorContent, attentionCount,
+  onDismissNotice, onOpenReport, onOpenIntake, onOpenWorkspace,
 }: MobilePriorityDashboardProps) {
   const [view, setView] = useState<View>("incidents");
   const [seenActivity, setSeenActivity] = useState<LineActivity | null>(null);
   const hasUnreadActivity = !!activity && activity !== seenActivity && view !== "activity";
-  const waiting = ranking.filter((item) => item.incident.status === "open");
-  const repairing = ranking.filter((item) => item.incident.status === "repairing");
-  const resolved = simulation.incidents.filter((incident) => incident.status === "resolved")
-    .slice().sort((a, b) => (b.resolvedAtMinute ?? 0) - (a.resolvedAtMinute ?? 0));
+  const scrollPositions = useRef<Record<View, number>>({ incidents: 0, line: 0, activity: 0 });
   const entries = useMemo(() => getActivityEntries(simulation), [simulation]);
   const finalReading = readings.at(-1);
   const lineEffect = finalReading ? getStationEffect(finalReading) : null;
   const output = finalReading?.ratePerHour ?? 0;
   const nominalOutput = STATIONS[STATIONS.length - 1].ratePerMinute * 60;
   const lineState = lineEffect?.kind === "slowed" ? "Slowed" : lineEffect?.label ?? "Unknown";
-  const title = view === "incidents" ? "Incidents" : view === "line" ? "Line status" : "Updates";
+  const title = view === "incidents" ? "Priorities" : view === "line" ? "Production" : "Activity";
 
   function changeView(next: View) {
     if (view === "activity" || next === "activity") setSeenActivity(activity);
+    scrollPositions.current[view] = window.scrollY;
     setView(next);
-    window.scrollTo({ top: 0, behavior: "instant" });
+    requestAnimationFrame(() => {
+      document.getElementById("queue-title")?.focus({ preventScroll: true });
+      window.scrollTo({ top: scrollPositions.current[next], behavior: "instant" });
+    });
   }
 
   function reviewIncident(id: string) {
@@ -105,15 +116,13 @@ export function MobilePriorityDashboard({
 
   return <div className={styles.shell}>
     <header className={styles.header}>
-      <div className={styles.brand}><span className={styles.wordmark}>TESLA</span><span className={styles.lineId}>Line 1</span></div>
-      <button type="button" className={styles.lineState} data-state={lineEffect?.kind}
-        onClick={() => changeView("line")} aria-label={"Line status: production " + lineState.toLowerCase()}>
-        <span className={styles.stateDot} aria-hidden="true" />{lineState}
+      <div className={styles.brand}><span className={styles.lineId}>Line 01</span><span className={styles.plantName}>General assembly</span></div>
+      <button type="button" className={styles.lineState} data-state={simulation.scenario === "manual" ? "unknown" : lineEffect?.kind}
+        onClick={() => changeView("line")} aria-label={simulation.scenario === "manual" ? "Line status: no live factory feed" : "Line status: production " + lineState.toLowerCase()}>
+        <span className={styles.stateDot} aria-hidden="true" />{simulation.scenario === "manual" ? "No live feed" : lineState}
       </button>
-      <button type="button" className={styles.demoButton} onClick={onOpenControls}
-        aria-label={"Open demo controls, simulation " + (running ? "playing" : "paused")} aria-haspopup="dialog">
-        Demo<span>{running ? "Playing" : "Paused"}</span>
-      </button>
+      <button type="button" className={styles.iconButton} onClick={onOpenWorkspace}
+        aria-label="Workspace options" aria-haspopup="dialog"><DotsThreeIcon size={24} aria-hidden="true" /></button>
     </header>
 
     <div className={styles.srOnly} role="status" aria-live="polite" aria-atomic="true">
@@ -121,71 +130,24 @@ export function MobilePriorityDashboard({
     </div>
 
     <main className={styles.main} id="mobile-view">
-      <div className={styles.heading}>
-        <h1 id="queue-title" tabIndex={-1}>{title}
-          {view === "incidents" && waiting.length + repairing.length > 0 && <span>{" " + (waiting.length + repairing.length)}</span>}
-        </h1>
-        {view === "incidents" && <button type="button" className={styles.reportButton}
+      {view === "incidents" ? <div className={styles.phoneHeading}>
+        <span className={styles.phoneLine}>General assembly · Line 01</span>
+        <div className={styles.phoneHeadingRow}><h1 id="queue-title" tabIndex={-1}>Priorities <span aria-live="polite" aria-atomic="true" aria-label={`${attentionCount} supervisor actions`}>{attentionCount || ""}</span></h1>
+        <button type="button" className={styles.phoneReport}
           onClick={onOpenIntake} disabled={pending} aria-label="Report incident" aria-haspopup="dialog">
-          <PlusIcon size={17} aria-hidden="true" />Report
-        </button>}
-      </div>
-
+          <PlusIcon size={19} aria-hidden="true" /><span>Report</span>
+        </button></div>
+      </div> : <div className={styles.heading}><div><p className={styles.eyebrow}>{simulation.scenario === "manual" ? "Manual workspace" : `Simulation · ${running ? "running" : "paused"}`}</p><h1 id="queue-title" tabIndex={-1}>{title}</h1><p className={styles.subtitle}>{view === "line" ? "The line, station by station" : "The latest across your line"}</p></div></div>}
       {notice && <div className={styles.notice} role="status"><p>{notice}</p>
         <button type="button" className={styles.iconButton} onClick={onDismissNotice} aria-label="Dismiss notification"><XIcon size={18} aria-hidden="true" /></button>
       </div>}
-
-      {view === "incidents" && <>
-        {waiting.length > 0 ? <ol className={styles.incidentList} aria-label="Incidents in priority order">
-          {waiting.map((item) => {
-            const { incident } = item;
-            const presentation = getIncidentPresentation(item, simulation.minute);
-            return <li key={incident.id}>
-              <button type="button" id={"queue-" + incident.id} className={styles.incidentRow}
-                data-urgency={presentation.urgency} onClick={() => reviewIncident(incident.id)} aria-haspopup="dialog">
-                <span className={styles.incidentMeta}>
-                  <span className={styles.station}>
-                    <span className={styles.rank}><span className={styles.srOnly}>Priority </span>{item.rank}</span>
-                    {incident.assessment.stationId ?? "Location unconfirmed"}
-                  </span>
-                  <span className={styles.deadline}>{presentation.timingLabel}</span>
-                </span>
-                <span className={styles.incidentTitle}>{presentation.title}<ArrowRightIcon size={17} aria-hidden="true" /></span>
-                <span className={styles.consequence}>{presentation.calculation ?? presentation.consequence}</span>
-              </button>
-            </li>;
-          })}
-        </ol> : <div className={styles.emptyState}>
-          <CheckCircleIcon size={24} aria-hidden="true" />
-          <h2>{repairing.length ? "Every incident has a response" : simulation.incidents.length === 0 ? "All stations operating normally" : "No incidents waiting"}</h2>
-          {!repairing.length && <button type="button" className={styles.textButton} onClick={onOpenControls}>Open demo controls<ArrowRightIcon size={16} aria-hidden="true" /></button>}
-        </div>}
-
-        {repairing.length > 0 && <section className={styles.repairs} aria-labelledby="mobile-repairs-title">
-          <h2 id="mobile-repairs-title">In repair <span>{repairing.length}</span></h2>
-          {repairing.map((item) => <button type="button" id={"queue-" + item.incident.id} key={item.incident.id}
-            className={styles.repairRow} onClick={() => reviewIncident(item.incident.id)} aria-haspopup="dialog">
-            <span className={styles.incidentMeta}><span className={styles.station}>{item.incident.assessment.stationId}</span>
-              <span>{getIncidentPresentation(item, simulation.minute).timingLabel}</span></span>
-            <span className={styles.repairTitle}>{getIncidentTitle(item.incident.assessment)}<ArrowRightIcon size={16} aria-hidden="true" /></span>
-            {item.incident.assessment.safety !== "none" && <span className={styles.safety}>Safety hold active</span>}
-          </button>)}
-        </section>}
-
-        {resolved.length > 0 && <details className={styles.details}>
-          <summary>Resolved <span>{resolved.length}</span></summary>
-          {resolved.map((incident) => <button type="button" id={"queue-" + incident.id} key={incident.id}
-            className={styles.resolvedRow} onClick={() => reviewIncident(incident.id)} aria-haspopup="dialog">
-            <span className={styles.station}>{incident.assessment.stationId ?? "Location unconfirmed"}</span>
-            <span className={styles.repairTitle}>{getIncidentTitle(incident.assessment)}<ArrowRightIcon size={16} aria-hidden="true" /></span>
-          </button>)}
-        </details>}
-      </>}
+      {view === "incidents" && <div className={styles.phoneQueue}>{supervisorContent}</div>}
 
       {view === "line" && <>
         <section className={styles.production} aria-label="Production output">
-          <span>General assembly</span>
-          <p className={styles.output}>{number(output)} <span>/ {number(nominalOutput)} cars per hour</span></p>
+          <span>{simulation.scenario === "manual" ? "Modeled output" : "General assembly"}</span>
+          <p className={styles.output}>{number(output)} <span>cars / hour</span></p>
+          <p className={styles.outputTarget}>Target {number(nominalOutput)} / hour</p>
           <span className={styles.outputState} data-state={lineEffect?.kind}>{lineEffect?.description ?? "Reading unavailable"}</span>
         </section>
         <ul className={styles.stationList} aria-label="Station conditions">{readings.map((reading) => {
@@ -222,18 +184,19 @@ export function MobilePriorityDashboard({
       {view === "activity" && <>{entries.length ? <ol className={styles.activityList}>
         {entries.map((entry) => <li key={entry.id}>
           <button type="button" className={styles.activityRow} onClick={() => reviewIncident(entry.incident.id)} aria-haspopup="dialog">
-            <span className={styles.activityMeta}><span>{entry.label} · {entry.incident.assessment.stationId ?? "Unconfirmed station"}</span><time>T+{timecode(entry.minute)}</time></span>
-            <span className={styles.repairTitle}>{getIncidentTitle(entry.incident.assessment)}<ArrowRightIcon size={16} aria-hidden="true" /></span>
+            <span className={styles.activityMeta}><span>{entry.incident.assessment.stationId ?? "Unconfirmed station"}</span><time>T+{timecode(entry.minute)}</time></span>
+            <span className={styles.repairTitle}>{entry.label}<ArrowRightIcon size={16} aria-hidden="true" /></span>
+            <span className={styles.activityContext}>{getIncidentTitle(entry.incident.assessment)}</span>
           </button>
         </li>)}
-      </ol> : <div className={styles.emptyState}><BellSimpleIcon size={24} aria-hidden="true" /><h2>No updates yet</h2></div>}
+      </ol> : <div className={styles.emptyState}><BellSimpleIcon size={28} aria-hidden="true" /><h2>A quiet start</h2><p>New incidents and team updates will appear here.</p></div>}
         <p className={styles.timeNote}>Times shown are elapsed simulation time.</p>
       </>}
     </main>
 
     <nav className={styles.navigation} aria-label="Supervisor views">
       {navigation.map(({ id, label, Icon }) => <button type="button" key={id} aria-current={view === id ? "page" : undefined}
-        aria-label={id === "activity" && hasUnreadActivity ? "Updates, unread activity" : label}
+        aria-label={id === "activity" && hasUnreadActivity ? "Activity, unread updates" : label}
         aria-controls="mobile-view" onClick={() => changeView(id)}>
         <span className={styles.navIcon}><Icon size={22} weight={view === id ? "fill" : "regular"} aria-hidden="true" />
           {id === "activity" && hasUnreadActivity && <span className={styles.navDot} />}

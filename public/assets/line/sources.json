@@ -1,0 +1,65 @@
+{
+  "abb": {
+    "revision": "45f4769d826cf3ac62a65495f2db67b78b0c81df",
+    "url": "https://github.com/ros-industrial/abb/tree/45f4769d826cf3ac62a65495f2db67b78b0c81df/abb_irb6700_support",
+    "license": "Apache-2.0"
+  },
+  "equipment": [
+    {
+      "title": "Body Carrier Skid (Car Factory Production Line)",
+      "file": "public/assets/line/body-skid.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-body-carrier-skid-dc8fe0df",
+      "download": "https://cdn.3dassets.dev/assets/27807/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Sealer Station (Car Factory Production Line)",
+      "file": "public/assets/line/fluid-station.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-sealer-station-e593ccec",
+      "download": "https://cdn.3dassets.dev/assets/27816/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Marriage Station Lift (Car Factory Production Line)",
+      "file": "public/assets/line/marriage-lift.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-marriage-station-lift-e41d57eb",
+      "download": "https://cdn.3dassets.dev/assets/27824/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Dashboard Delivery Cart (Car Factory Production Line)",
+      "file": "public/assets/line/dashboard-cart.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-dashboard-delivery-cart-317a1220",
+      "download": "https://cdn.3dassets.dev/assets/27831/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Final Inspection Light Tunnel (Car Factory Production Line)",
+      "file": "public/assets/line/inspection-tunnel.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-final-inspection-light-tun-8d121454",
+      "download": "https://cdn.3dassets.dev/assets/27842/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Line Worker With Torque Tool (Car Factory Production Line)",
+      "file": "public/assets/line/line-worker.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-line-worker-with-torque-to-4150bc18",
+      "download": "https://cdn.3dassets.dev/assets/27861/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    },
+    {
+      "title": "Supervisor Pointing (Car Factory Production Line)",
+      "file": "public/assets/line/supervisor.glb",
+      "url": "https://3dassets.dev/assets/car-factory-production-line-supervisor-pointing-3446c23e",
+      "download": "https://cdn.3dassets.dev/assets/27864/v1/model.glb",
+      "license": "CC0-1.0",
+      "aiGenerated": true
+    }
+  ]
+}

@@ -3,7 +3,18 @@ import { getRankingBasis } from "@/lib/priority/ranking-reason";
 import type { RankedIncident } from "@/lib/priority/types";
 import styles from "./priority-dashboard.module.css";
 
-export function DecisionMethod({ waiting }: { waiting: RankedIncident[] }) {
+export function DecisionMethod({ waiting, supervisor = false }: { waiting: RankedIncident[]; supervisor?: boolean }) {
+  if (supervisor) return <div className={styles.panelBody}>
+    <p className={styles.methodLead}>Recommend the next supervisor action, then track who has accepted the work.</p>
+    <ol className={styles.methodSteps}>
+      <li><strong>Protect the area</strong><span>Personnel concerns and spreading quality problems hold the whole modeled area. Recorded containment and area restart are separate decisions.</span></li>
+      <li><strong>Resolve missing observations</strong><span>Ask for the observation that is missing or arrange an investigation. A named acknowledgment establishes ownership; a request alone does not.</span></li>
+      <li><strong>Protect response windows</strong><span>Production contact windows reserve the upper catalog repair estimate, two minutes for acknowledgment and one minute of supervisor attention. Timing is unavailable while the area is held.</span></li>
+      <li><strong>Monitor accepted work</strong><span>Bring back missed checkpoints and returned work. Simulated repair completion never releases equipment without supervisor verification.</span></li>
+      <li><strong>Protect current attention</strong><span>A selected action gets a one-minute focus allowance. Protection work and deadlines that close before it finishes can interrupt. These durations are demo assumptions.</span></li>
+    </ol>
+    <p>All eight stations represent one supervisor area. This version does not yet model staffing qualifications or finite maintenance resources. AI interprets reports; it cannot acknowledge a request, confirm containment or authorize restart.</p>
+  </div>;
   return <div className={styles.panelBody}>
     <p className={styles.methodLead}>The AI interprets the report. An explicit decision policy sets the order.</p>
     {waiting.length > 0 && <section className={styles.methodOrder}><h3>Applied to this queue</h3>{waiting.map(item => <div key={item.incident.id}><strong>{item.rank}. {item.incident.assessment.stationId ?? "Location unknown"}</strong><p>{getRankingBasis(item, waiting)}</p></div>)}</section>}

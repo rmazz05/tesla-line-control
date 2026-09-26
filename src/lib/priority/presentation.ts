@@ -45,6 +45,7 @@ export function getIncidentPresentation(item: RankedIncident, minute: number): I
   const decision = priorityDecision(incident, item.criticalInMinutes, item.impactEvent, item.slackMinutes, item.stationReading);
   const review = decision.group === 2 || assessment.needsReview || assessment.kind === "unknown" || !assessment.stationId;
   const title = getIncidentTitle(assessment);
+  if (item.supervisorAction) return { title, consequence: item.supervisorAction.reason, urgency: item.supervisorAction.urgency, urgencyLabel: item.supervisorAction.title, timingLabel: item.supervisorAction.timing, calculation: item.supervisorAction.title };
   const safety = assessment.safety !== "none";
   const capacity = Math.round(Math.max(0, Math.min(1, assessment.capacityFactor)) * 100);
   const impact = item.criticalInMinutes;
@@ -52,6 +53,7 @@ export function getIncidentPresentation(item: RankedIncident, minute: number): I
   const holdNow = timedHold && minute >= incident.reportedAtMinute + assessment.criticalAfterMinutes!;
 
   if (incident.status === "repairing") {
+    if (incident.response?.readyAt != null) return { title, consequence: "The responsible team returned the work. Supervisor verification is required before release.", urgency: "review", urgencyLabel: "Verify returned work", timingLabel: "Verification required" };
     const remaining = incident.repairCompletesAtMinute === null ? null : Math.max(0, incident.repairCompletesAtMinute - minute);
     return {
       title,
@@ -120,6 +122,12 @@ export function getIncidentPresentation(item: RankedIncident, minute: number): I
 /** Current response takes precedence over the original diagnostic suggestion. */
 export function getRecommendedResponse(item: RankedIncident | undefined, fallback: string): string {
   if (!item) return fallback;
+  if (item.incident.response) {
+    const response = item.incident.response;
+    if (response.readyAt !== null) return "Verify the returned work against the established checks. Record the result before releasing this incident.";
+    if (response.acknowledgedAt === null) return `${response.team} has been contacted. Obtain acknowledgment from a named person; ownership is not yet confirmed.`;
+    return `${response.owner} (${response.team}) accepted the response. Follow the recorded checkpoint and verify the work when it is returned.`;
+  }
   if (item.incident.status === "repairing" && item.incident.assessment.kind === "supply") return "Maintenance is restoring external replenishment. Assembly can continue while its remaining input stock lasts.";
   if (item.incident.status === "repairing" && item.incident.containmentConfirmedAtMinute == null && keepsRunningDuringRepair(item.incident.assessment)) return "The isolated primary is being repaired separately. Production continues on the calibrated backup under the prepared demo intervention plan.";
   if (item.incident.status === "repairing") return "Maintenance is repairing and verifying the equipment. Keep the station held until the response is complete.";

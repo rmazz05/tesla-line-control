@@ -19,6 +19,14 @@
 .calloutProjection { z-index: 5; }
 .incidentLabels button { pointer-events: auto; }
 
+.audiencePresence { position: absolute; top: 12px; left: 0; transform: translateX(-50%); padding: 5px 6px; width: max-content; max-width: 112px; border-radius: 4px; background: #f6f8f7; border: 1px solid #7b8b81; color: #23342c; pointer-events: auto; }
+.audiencePresence > strong { display: block; text-align: center; font: 9px "Geist Mono", monospace; margin-bottom: 4px; }
+.audiencePresence[data-fault="true"] { background: #ffe5e8; border-color: #c02035; box-shadow: 0 0 8px #c0203540; }
+.audiencePresence > div { display: flex; justify-content: center; flex-wrap: wrap; gap: 4px; max-width: 98px; }
+.audiencePresence span { width: 12px; height: 12px; display: grid; place-items: center; background: #21804b; border-radius: 50%; color: #fff; font: bold 10px sans-serif; }
+.audiencePresence span[data-fault="true"] { background: #c02035; }
+.audiencePresence span[data-away="true"] { opacity: .5; outline: 1px dashed #34453d; outline-offset: 1px; }
+
 .stationLabel {
   display: block;
   white-space: nowrap;
@@ -261,3 +269,88 @@
 }
 
 .markerEffect[data-effect="waiting"], .flowMarker[data-effect="waiting"] { color: #405d69; background: #e3edf1; }
+
+.viewTools { display: flex; align-items: center; gap: 0; border: 1px solid #a4b2b8; border-radius: 5px; background: #f1f4f4; overflow: hidden; }
+.controls .viewTools button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 32px; padding: 0 10px; border: 0; background: transparent; color: #33444e; text-decoration: none; font-size: 11px; }
+.controls .viewTools button + button { border-left: 1px solid #bec9ce; }
+.controls .viewTools button:hover { background: #dde5e8; }
+.controls .viewTools button[aria-pressed="true"] { background: #334a56; color: #fff; }
+.shell[data-navigation="pan"] canvas { cursor: grab; }
+.shell canvas:active { cursor: grabbing; }
+.stationLabel { font-size: 10px; color: #42515a; }
+.markerAnchor[data-raised="true"] { --marker-leader: 28px; }
+@media (max-width: 600px) { .controls { flex-wrap: wrap; justify-content: flex-end; gap: 6px; } .controls .viewTools button { padding-inline: 7px; } }
+
+/* Camera tools and incident pins share a compact, tactile control treatment. */
+.marker { height: 34px; border-radius: 6px; box-shadow: 0 2px 4px #25333c26; transition: background-color 160ms cubic-bezier(.16,1,.3,1), box-shadow 160ms cubic-bezier(.16,1,.3,1), filter 160ms cubic-bezier(.16,1,.3,1); }
+.marker::after { content: ""; position: absolute; inset: -5px 0; }
+.marker:active { box-shadow: none; filter: brightness(.9); }
+.viewTools { padding: 3px; gap: 2px; border-radius: 9px; border: 0; background: #f2f5f6; box-shadow: 0 2px 5px #263c4726; overflow: visible; }
+.controls .viewTools button { min-height: 38px; min-width: 38px; border-radius: 6px; padding-inline: 10px; transition: background-color 160ms cubic-bezier(.16,1,.3,1), color 160ms cubic-bezier(.16,1,.3,1); }
+.controls .viewTools button + button { border-left: 0; }
+.controls .viewTools button[aria-pressed="true"] { background: #334a56; }
+@media (pointer: coarse) { .controls .viewTools button { min-height: 44px; min-width: 44px; } }
+@media (prefers-reduced-motion: reduce) { .marker, .controls .viewTools button { transition: none; } }
+.shell { container-type: inline-size; }
+.controls .viewTools button { min-height: 44px; min-width: 44px; }
+@container (max-width: 620px) {
+  .markerAnchor[data-raised="true"] { --marker-leader: 64px; }
+  .controls { flex-wrap: wrap; justify-content: flex-end; gap: 6px; left: 14px; }
+  .controls .viewTools button { padding-inline: 8px; }
+}
+
+/* Architectural context stays separate from the incident overlays. */
+.plantToolbar { position: absolute; z-index: 12; inset: 14px 14px auto; display: flex; align-items: center; flex-wrap: wrap; gap: 12px; pointer-events: none; }
+.scopeSwitch { display: flex; padding: 3px; gap: 2px; background: #f5f7f5; border-radius: 9px; box-shadow: 0 2px 5px #263c4726; pointer-events: auto; }
+.scopeSwitch button { min-height: 40px; padding: 0 14px; border: 0; border-radius: 6px; background: transparent; color: #41545d; font: 600 12px var(--font-geist-sans), sans-serif; cursor: pointer; }
+.scopeSwitch button:hover { background: #e0e7e4; }
+.scopeSwitch button[aria-pressed="true"] { background: #334a56; color: #fff; }
+.scopeSwitch button:focus-visible, .plantLabel button:focus-visible, .plantReference summary:focus-visible { outline: 2px solid #23485c; outline-offset: 3px; }
+.plantTitle { display: grid; gap: 3px; padding: 5px 8px; color: #33474d; background: #dfe5e0e8; border-radius: 4px; }
+.plantTitle strong { font-size: 12px; font-weight: 650; }
+.plantTitle span { font-size: 10px; color: #506167; }
+.plantLabels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.plantLabel { position: absolute; left: 0; top: 0; visibility: hidden; white-space: nowrap; }
+.plantLabel > span { display: block; padding: 5px 8px; background: #f5f7f0e8; border: 1px solid #a5b2b0; border-radius: 4px; font-size: 10px; color: #344850; box-shadow: 0 1px 4px #334a5620; }
+.plantLabel button { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 44px; padding: 8px 12px; border: 1px solid #8b3033; border-radius: 5px; background: #a13639; color: #fff; cursor: pointer; pointer-events: auto; box-shadow: 0 2px 6px #334a5630; }
+.plantLabel strong { font-size: 11px; }
+.plantLabel button span { font-size: 10px; }
+.plantLabel button:hover { background: #852b31; }
+.plantReference { position: absolute; bottom: 16px; left: 14px; display: flex; align-items: flex-end; gap: 14px; color: #3a5058; font-size: 10px; z-index: 13; }
+.plantReference details { position: relative; }
+.plantReference summary { min-height: 32px; display: flex; align-items: center; cursor: pointer; padding: 0 8px; background: #edf1eee8; border: 1px solid #acbab5; border-radius: 4px; list-style: none; }
+.plantReference summary::after { content: "+"; margin-left: 8px; font-size: 14px; }
+.plantReference details[open] summary::after { content: "−"; }
+.referencePanel { position: absolute; bottom: 41px; left: 0; width: min(340px, calc(100cqw - 28px)); padding: 16px; color: #34454c; background: #f5f7f3; border: 1px solid #a6b5b2; border-radius: 7px; box-shadow: 0 8px 30px #243d4430; font-size: 12px; line-height: 1.55; }
+.referencePanel strong { font-size: 13px; }
+.referencePanel p { margin: 10px 0; }
+.referencePanel a { display: block; margin-top: 6px; color: #315b73; text-decoration: underline; text-underline-offset: 3px; }
+.mapScale { display: flex; flex-direction: column; gap: 4px; align-items: center; padding-bottom: 3px; }
+.mapScale > span { width: 35px; height: 5px; border: solid #536b6e; border-width: 0 1px 1px; }
+.mapScale small { font-size: 9px; }
+.north { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.north > span { display: block; font-size: 20px; line-height: 22px; }
+.north small { font-size: 9px; font-weight: 700; }
+.shell[data-scope="line"] .stationLabel { padding: 2px 4px; border-radius: 3px; background: #e4e9e0de; font-size: 9px; color: #344c56; }
+.shell[data-scope="line"] .markerAnchor { --marker-leader: 24px; }
+.shell[data-scope="line"] .markerAnchor[data-raised="true"] { --marker-leader: 62px; }
+@container (max-width: 720px) {
+  .plantTitle { max-width: 260px; }
+  .plantReference { bottom: 70px; }
+  .controls { left: 14px; }
+  .controls > span { padding: 0 5px; background: #e0e7e0dc; }
+}
+@container (max-width: 490px) {
+  .plantToolbar { gap: 5px; inset: 10px 10px auto; }
+  .plantTitle { flex-basis: 100%; max-width: none; background: transparent; }
+  .plantLabel > span { font-size: 9px; padding: 3px 5px; }
+  .scopeSwitch button { min-height: 44px; }
+  .plantReference { gap: 10px; }
+}
+.controls > span { padding: 0 6px; border-radius: 3px; background: #e5ece5db; }
+
+.shell[data-scope="focus"] .stationLabel { padding: 2px 4px; border-radius: 3px; background: #e4e9e0de; font-size: 9px; color: #344c56; }
+.unavailable button { min-height: 44px; margin-top: 8px; border: 1px solid #617780; border-radius: 6px; padding: 0 16px; background: #334a56; color: #fff; cursor: pointer; }
+.referencePanel { max-height: min(480px, calc(100cqh - 110px)); overflow-y: auto; }
+.scopeSwitch button { min-height: 44px; }
+@container (max-width: 490px) { .scopeSwitch button { padding-inline: 9px; font-size: 11px; } }

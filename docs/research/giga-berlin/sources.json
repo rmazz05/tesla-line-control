@@ -1,0 +1,60 @@
+{
+  "retrievedAt": "2026-09-26",
+  "reference": "Berlin-Brandenburg Model Y GA, 2023 application baseline",
+  "currentAsBuiltVerified": false,
+  "officialRecord": "https://www.uvp-verbund.de/trefferanzeige?docuuid=250677b6-a8f4-4850-a126-7d3ff82103ba",
+  "pdfPageNumbering": "one-based within each file",
+  "sources": [
+    {
+      "id": "berlin-architecture-site-2023",
+      "title": "Tesla SE_V4_Formular_12_Seiten_1-227.pdf",
+      "url": "https://drive.google.com/file/d/1FrR1dzas3lmkxS5zK18b1JxdlSVyhJcI/view",
+      "localPath": "/Users/mazz/Downloads/Tesla SE_V4_Formular_12_Seiten_1-227.pdf",
+      "inspectedPages": [
+        14,
+        15,
+        16,
+        22
+      ],
+      "purpose": "Site overview, legend, and GA index",
+      "sha256": "46c70611ca17753dca973d683ede9151a29512dccebfc26cd74f8590f99506fc",
+      "provenance": "Tesla-authored document retrieved from third-party public mirror; no hash comparison with original government host"
+    },
+    {
+      "id": "berlin-ga-architecture-2023",
+      "title": "Tesla SE_V4_Formular_12_Seiten_401-500.pdf",
+      "url": "https://drive.google.com/file/d/1s_3jSLxdN83wCtIuy-NyzuMkezHUcVKm/view",
+      "localPath": "/Users/mazz/Downloads/Tesla SE_V4_Formular_12_Seiten_401-500.pdf",
+      "inspectedPages": [
+        26,
+        31,
+        53,
+        54,
+        64,
+        76,
+        77
+      ],
+      "packagePages": [
+        426,
+        431,
+        453,
+        454,
+        464,
+        476,
+        477
+      ],
+      "purpose": "GA building and operation forms, architectural and supervisor-area drawings",
+      "sha256": "ecc88ab45272ea551f6e61cd951be6d6c4594adf60a4a085d5915b8a1fa7e408",
+      "provenance": "Tesla-authored document retrieved from third-party public mirror; no hash comparison with original government host"
+    }
+  ],
+  "imageTreatment": "PDF rendering only; landscape architectural sheets rotated 90 degrees for reading; no reconstructed content; redactions retained",
+  "unverified": [
+    "2026 as-built configuration",
+    "individual equipment locations",
+    "mapping of demo station IDs",
+    "complete process sequence",
+    "takt and buffer data",
+    "Tesla supervisor software and escalation procedures"
+  ]
+}

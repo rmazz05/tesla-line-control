@@ -1,0 +1,155 @@
+.queue, .response { color: #e5edf0; font-size: 13px; line-height: 1.55; }
+.queue { padding: 20px 24px; }
+.queue section + section { margin-top: 26px; }
+.queue h3, .response h3 { font-size: 15px; font-weight: 600; margin: 0 0 12px; }
+.queue h3 span { color: #a7b7bf; margin-left: 10px; font-weight: 400; }
+.queue p, .response p { margin: 8px 0 12px; color: #b7c6cd; }
+.queue button, .response button { min-height: 44px; border: 1px solid #4c5e68; border-radius: 6px; padding: 9px 12px; background: #24343d; color: #edf5f8; cursor: pointer; font: inherit; text-align: left; }
+.queue button:hover, .response button:hover { background: #314752; }
+.queue button:disabled, .response button:disabled { opacity: .45; cursor: not-allowed; }
+.queue button:focus-visible, .response button:focus-visible, .queue input:focus-visible, .response input:focus-visible, .queue textarea:focus-visible, .response textarea:focus-visible { outline: 2px solid #9bd7f0; outline-offset: 3px; }
+.hold { padding: 15px; border-left: 3px solid #f09083; background: #342a29; margin-bottom: 22px; }
+.hold strong { color: #ffd0c5; font-size: 15px; }
+.action { border-bottom: 1px solid #3b474d; padding: 16px 0; }
+.action[data-first="true"] { border-top: 1px solid #718793; }
+.meta { display: flex; justify-content: space-between; gap: 12px; font-size: 11px; color: #bbccd4; }
+.queue .actionTitle { border: 0; padding: 6px 0; background: transparent; font-size: 17px; font-weight: 550; width: 100%; }
+.queue .primary, .response .primary { background: #cce5f0; color: #172832; border-color: #cce5f0; }
+.queue .primary:hover, .response .primary:hover { background: #e1f3fb; }
+.queue .commitment { display: flex; flex-direction: column; gap: 4px; width: 100%; border: 0; border-bottom: 1px solid #3b474d; border-radius: 0; background: transparent; padding: 12px 0; }
+.commitment span { font-size: 12px; color: #b7c6cd; }
+.queue details, .response details { margin-top: 20px; padding-top: 14px; border-top: 1px solid #3b474d; }
+.queue .action details { margin: 8px 0; padding: 0; border: 0; }
+.queue summary, .response summary { cursor: pointer; min-height: 32px; color: #d0dfe6; }
+.field { display: flex; flex-direction: column; gap: 7px; margin: 14px 0; }
+.field input, .field textarea, .field select { background: #121d23; color: #edf5f8; border: 1px solid #586b75; border-radius: 5px; padding: 10px; min-width: 0; width: 100%; font: inherit; }
+.field textarea { min-height: 75px; resize: vertical; }
+.check { display: flex; align-items: flex-start; gap: 10px; margin: 15px 0; }
+.check input { width: 18px; height: 18px; flex-shrink: 0; margin-top: 3px; accent-color: #a6d9ef; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.caption { font-size: 11px; color: #9db1bc !important; }
+.response { border-block: 1px solid #4b5e69; padding: 18px 0; margin: 18px 0; }
+.response .owner { color: #d4e9f3; }
+.response button + button { margin-top: 10px; }
+.interruption { padding: 12px; background: #402a27; border-left: 3px solid #f09083; color: #ffdad0 !important; }
+.empty { padding-block: 12px; }
+@media (max-width: 767px) { .queue { padding: 0 20px 24px; } .action { padding-block: 18px; } .queue .actionTitle { font-size: 19px; } }
+
+/* Mobile presentation shares the same action policy and confirmations. */
+.mobileQueue { padding: 0 24px 24px; color: var(--phone-text); font-size: 1rem; }
+.mobileQueue h2 { font-size: 1rem; font-weight: 500; }
+.mobileQueue p { color: var(--phone-muted); }
+.mobileQueue .hold { margin-bottom: 24px; padding: 16px; background: var(--phone-danger-surface); border: 1px solid var(--phone-line); border-radius: 12px; }
+.mobileQueue .hold strong { display: flex; gap: 8px; align-items: center; color: var(--phone-danger); font-size: 0.875rem; font-weight: 550; }
+.mobileQueue .hold p { margin: 6px 0 0; font-size: 0.8125rem; line-height: 1.5; color: var(--phone-secondary); }
+.mobileQueue .hold button { width: 100%; min-height: 48px; text-align: center; background: var(--phone-primary); border: 0; color: var(--phone-on-primary); border-radius: 8px; font-size: .9375rem; font-weight: 500; }
+.mobileQueue .nextAction { padding: 20px; border: 1px solid var(--phone-line); background: var(--phone-surface); border-radius: 16px; }
+.mobileQueue .nextMeta { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px; color: var(--phone-muted); font-size: 0.75rem; }
+.nextAction[data-urgent="true"] .nextMeta > span:last-child { color: var(--phone-danger); }
+.equipment { display: block; margin-top: 24px; color: var(--phone-secondary); font-family: "Geist Mono", monospace; font-size: 0.75rem; }
+.mobileQueue .nextAction h2 { margin: 8px 0 24px; font-size: 1.4375rem; font-weight: 500; line-height: 1.3; letter-spacing: -.03em; text-wrap: pretty; }
+.mobileQueue .nextButton { display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; min-height: 50px; padding: 12px 16px; border: 0; border-radius: 10px; background: var(--phone-primary); color: var(--phone-on-primary); font-size: 0.9375rem; font-weight: 550; line-height: 1.4; }
+.nextButton svg { flex-shrink: 0; }
+.mobileQueue .nextButton:hover { background: var(--phone-text); }
+.mobileQueue .nextButton:active { background: var(--phone-secondary); }
+.mobileQueue .nextReason { margin: 12px 0 -4px; padding: 0; border: 0; }
+.mobileQueue .nextReason summary { min-height: 44px; padding-block: 12px; align-content: center; color: var(--phone-muted); font-size: 0.8125rem; }
+.mobileQueue .nextReason p { font-size: 0.875rem; line-height: 1.6; margin-bottom: 8px; }
+.upNext { margin-top: 32px; }
+.upNext h2 { margin-bottom: 4px !important; color: var(--phone-secondary); }
+.upNext h2 span { color: var(--phone-muted); font-size: 0.75rem; margin-left: 8px; }
+.mobileQueue .compactAction { display: flex; gap: 14px; align-items: flex-start; padding: 22px 0; width: 100%; border: 0; border-bottom: 1px solid var(--phone-line); border-radius: 0; background: transparent; }
+.order { color: var(--phone-muted); font-size: 0.75rem; font-variant-numeric: tabular-nums; padding-top: 2px; }
+.actionCopy { flex: 1; min-width: 0; }
+.actionCopy > strong { display: block; margin-top: 8px; font-size: 1rem; line-height: 1.45; font-weight: 500; color: var(--phone-text); text-wrap: pretty; }
+.nextStep { display: block; margin-top: 8px; font-size: 0.8125rem; color: var(--phone-secondary); }
+.compactAction > svg { align-self: center; flex-shrink: 0; color: var(--phone-muted); }
+.mobileQueue .clearState { padding: 32px 12px 40px; text-align: center; }
+.clearState > svg { margin: 0 auto 20px; color: var(--phone-success); }
+.mobileQueue .clearState h2 { font-size: 1.375rem; line-height: 1.35; letter-spacing: -.025em; }
+.mobileQueue .clearState p { font-size: 1rem; margin: 12px auto 0; max-width: 28ch; }
+.mobileQueue section + section { margin-top: 32px; }
+.mobileQueue h3 { font-size: 0.9375rem; color: var(--phone-secondary); font-weight: 500; }
+.mobileQueue .commitment { padding-block: 18px; color: var(--phone-text); border-color: var(--phone-line); }
+.mobileQueue .commitment strong { font-weight: 500; font-size: 0.9375rem; }
+.mobileQueue .commitment span { font-size: 0.8125rem; color: var(--phone-muted); }
+.mobileQueue > details { margin-top: 24px; padding-top: 0; border-color: var(--phone-line); }
+.mobileQueue > details > summary { min-height: 56px; padding-block: 16px; align-content: center; color: var(--phone-secondary); font-size: 0.875rem; }
+.mobileQueue :is(input:not([type="checkbox"]), textarea, select) { font-size: 1rem; }
+.mobileQueue .field { font-size: 0.875rem; }
+.mobileQueue .check { font-size: 0.875rem; min-height: 44px; }
+.mobileQueue .buttons button { flex: 1; text-align: center; font-size: 0.875rem; }
+.mobileQueue button { touch-action: manipulation; }
+@media (max-width: 359px) { .mobileQueue { padding-inline: 20px; } .mobileQueue .nextAction { padding: 18px; } }
+@media (prefers-reduced-motion: reduce) { .mobileQueue * { animation: none !important; transition: none !important; } }
+.mobileResponse { border: 0; margin: 28px 0; padding: 0; color: var(--phone-text); font-size: 1rem; line-height: 1.6; }
+.mobileResponse h3 { font-size: 1.125rem; line-height: 1.4; font-weight: 550; letter-spacing: -.015em; margin-bottom: 12px; }
+.mobileResponse p { color: var(--phone-muted); margin: 12px 0 20px; }
+.mobileResponse button { width: 100%; min-height: 48px; padding: 12px 16px; text-align: center; border-radius: 10px; border-color: var(--phone-border); background: var(--phone-surface); color: var(--phone-text); font-size: 0.9375rem; font-weight: 500; line-height: 1.5; }
+.mobileResponse button:hover { background: var(--phone-raised); }
+.mobileResponse .primary { background: var(--phone-primary); border-color: var(--phone-primary); color: var(--phone-on-primary); }
+.mobileResponse .primary:hover { background: var(--phone-text); }
+.mobileResponse .protection { margin-bottom: 16px; }
+.mobileResponse .check { min-height: 48px; padding: 16px; background: var(--phone-surface); border: 1px solid var(--phone-line); border-radius: 10px; font-size: 0.875rem; color: var(--phone-secondary); gap: 12px; cursor: pointer; }
+.mobileResponse .check input { margin-top: 2px; width: 20px; height: 20px; accent-color: var(--phone-primary); }
+.mobileResponse .field { font-size: 0.875rem; color: var(--phone-secondary); margin: 20px 0 16px; gap: 10px; }
+.mobileResponse .field :is(input, textarea, select) { font-size: 1rem; min-height: 48px; padding: 12px; border-radius: 8px; background: var(--phone-surface); border-color: var(--phone-border); color: var(--phone-text); }
+.mobileResponse .field textarea { min-height: 100px; }
+.mobileResponse .owner { color: var(--phone-secondary); }
+.mobileResponse details { border-color: var(--phone-line); margin-top: 24px; padding-top: 0; }
+.mobileResponse summary { min-height: 48px; padding-block: 12px; color: var(--phone-secondary); font-size: 0.875rem; }
+.mobileResponse .caption { font-size: 0.75rem; color: var(--phone-muted) !important; margin: 16px 0 0; }
+.mobileQueue :is(button, input, textarea, select):focus-visible, .mobileResponse :is(button, input, textarea, select):focus-visible { outline: 2px solid var(--phone-focus); outline-offset: 3px; }
+
+.queue:not(.mobileQueue) { padding: 22px 24px; }
+.queue .queueLabel { color: #a9b9b0; font-size: 11px; font-weight: 450; margin-bottom: 18px; }
+.queue .action { --priority: #b7d9c3; --priority-bg: #304438; padding: 18px 0; border-color: #3b4840; }
+.queue .action[data-first="true"] { border-top: 0; padding-top: 0; }
+.queue .action[data-urgency="critical"] { --priority: #ffc1b3; --priority-bg: #4e332c; }
+.queue .action[data-urgency="warning"] { --priority: #efcf8f; --priority-bg: #443e2c; }
+.queue .action[data-urgency="review"] { --priority: #c5d7ed; --priority-bg: #35404d; }
+.queue .action[data-selected="true"] { background: #ffffff04; }
+.meta > span:first-child { display: flex; align-items: center; gap: 10px; }
+.rankBadge { display: inline-grid; place-items: center; width: 30px; height: 28px; border-radius: 4px; background: var(--priority-bg); color: var(--priority); font-size: 12px; font-family: 'Geist Mono', monospace; font-weight: 500; }
+.deadline { color: var(--priority); align-self: center; font-size: 12px; }
+.queue .actionTitle { font-size: 16px; line-height: 1.4; margin-top: 8px; padding-block: 6px; color: #edf3ef; }
+.queue .actionStep { margin: 3px 0 6px; color: #b3c3b9; font-size: 12px; }
+.queue .action summary { color: #a7b7ae; min-height: 44px; padding-block: 8px; font-size: 11px; }
+.queue .takeAction { display: flex; align-items: center; justify-content: space-between; width: 100%; background: #2b3c31; border-color: #51695a; color: #e3eee7; min-height: 44px; margin-top: 10px; font-size: 12px; }
+.queue .takeAction:hover { background: #38503f; }
+.queue .empty { padding: 36px 0 48px; text-align: center; }
+.empty > svg { display: block; margin: 0 auto 18px; color: #a9c4b2; }
+.empty > strong { display: block; font-size: 17px; font-weight: 500; }
+.queue .empty p { font-size: 12px; line-height: 1.6; margin: 10px auto; max-width: 26ch; }
+.queue:not(.mobileQueue) > details { border-color: #3b4840; }
+.queue:not(.mobileQueue) > details > summary { font-size: 12px; color: #aebfb4; min-height: 44px; padding-block: 10px; }
+@media (max-width: 1100px) { .queue:not(.mobileQueue) { padding-inline: 18px; } }
+
+/* The demo phone uses the same actions and order as the live workspace. */
+.motionList { position: relative; }
+.motionList > .action { position: relative; }
+.queue.phoneQueue { padding: 14px 16px 24px; }
+.phoneQueue .action, .phoneQueue .action[data-first="true"] { padding: 14px; margin-bottom: 12px; border: 1px solid #33483b; border-radius: 13px; background: #1c2720; }
+.phoneQueue .action[data-selected="true"] { border-color: #779685; background: #223329; }
+.phoneQueue .action[data-urgency="critical"] { background: #2c2320; border-color: #65433a; }
+.phoneQueue .action[data-urgency="critical"][data-selected="true"] { border-color: #b97c6b; }
+.phoneQueue .action[data-urgency="warning"] { background: #29281e; border-color: #57503a; }
+.phoneQueue .action[data-urgency="review"] { background: #20282c; border-color: #414e59; }
+.phoneQueue .actionTitle { font-size: 15px; line-height: 1.4; margin-top: 6px; min-height: 44px; font-weight: 500; }
+.phoneQueue .meta { font-size: 10px; gap: 8px; }
+.phoneQueue .rankBadge { width: 25px; height: 25px; font-size: 11px; }
+.phoneQueue .deadline { font-size: 11px; }
+.phoneQueue .actionStep { font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.phoneQueue .action details { margin: 4px 0 0; }
+.phoneQueue .action summary { font-size: 11px; min-height: 44px; padding-block: 12px; }
+.phoneQueue .takeAction { margin-top: 4px; border-radius: 8px; min-height: 44px; background: #c8dfce; border-color: #c8dfce; color: #193123; }
+.phoneQueue .takeAction:hover { background: #e0f3e5; }
+.phoneQueue .hold { margin-bottom: 16px; padding: 12px 14px; border-radius: 10px; border: 1px solid #68463c; background: #342822; }
+.phoneQueue .hold strong { font-size: 13px; }
+.phoneQueue .hold p { font-size: 12px; margin: 6px 0 0; }
+.phoneQueue .empty { padding-block: 42px; }
+.phoneQueue .commitment { font-size: 12px; }
+.phoneQueue .commitment span { font-size: 11px; }
+.phoneQueue h3 { font-size: 13px; }
+.phoneQueue .check { font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .phoneQueue *, .phoneQueue *::before, .phoneQueue *::after { animation: none !important; transition: none !important; } }

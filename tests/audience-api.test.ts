@@ -1,0 +1,63 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { randomBytes } from "node:crypto";
+import { GET, POST } from "../src/app/api/demo/route";
+import { AUDIENCE_FAULTS } from "../src/lib/audience/catalog";
+
+test("room API supports concurrent phones, authenticates controls, and survives retries", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "audience-api-"));
+  const previous = process.env.DEMO_DATA_DIR;
+  process.env.DEMO_DATA_DIR = directory;
+  const host = randomBytes(32).toString("hex");
+  const phones = Array.from({ length: 120 }, () => randomBytes(32).toString("hex"));
+  const code = "ABCDEF";
+  const post = (token: string, body: Record<string, unknown>) => POST(new Request("http://localhost/api/demo", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ code, ...body }) }));
+  const get = (token: string) => GET(new Request(`http://localhost/api/demo?code=${code}`, { headers: { Authorization: `Bearer ${token}` } }));
+  try {
+    assert.equal((await post(host, { action: "create" })).status, 200);
+    const joins = await Promise.all(phones.map((token, i) => post(token, { action: "join", name: `Audience ${i}` })));
+    assert.ok(joins.every(response => response.status === 200));
+    const joined = await (await get(host)).json();
+    assert.equal(joined.participants.length, 120);
+    assert.equal(new Set(joined.participants.map((person: { id: string }) => person.id)).size, 120);
+    assert.equal((await post(phones[0], { action: "start", requestId: randomBytes(32).toString("hex") })).status, 403);
+    assert.equal((await get(randomBytes(32).toString("hex"))).status, 401);
+    assert.equal((await post(host, { action: "start", requestId: randomBytes(32).toString("hex") })).status, 200);
+    const assigned = await (await get(phones[0])).json();
+    const options = AUDIENCE_FAULTS.filter(fault => fault.stationId === assigned.me.stationId);
+    const other = AUDIENCE_FAULTS.find(fault => fault.stationId !== assigned.me.stationId)!;
+    const input = { action: "toggle", faultId: options[0].id, active: true, version: 0, round: 1, requestId: randomBytes(32).toString("hex") };
+    assert.equal((await post(phones[0], input)).status, 200);
+    assert.equal((await post(phones[0], input)).status, 200);
+    assert.equal((await (await get(host)).json()).ranking.length, 1);
+    assert.equal((await post(phones[0], { ...input, requestId: randomBytes(32).toString("hex"), version: 1, faultId: other.id })).status, 400);
+    assert.equal((await post(phones[0], { ...input, requestId: randomBytes(32).toString("hex"), version: -1 })).status, 400);
+    const mobileResponse = await get(phones[0]);
+    const mobile = await mobileResponse.json();
+    assert.equal(mobileResponse.headers.get("cache-control"), "no-store, max-age=0");
+    assert.equal(mobile.me.id, assigned.me.id);
+    assert.deepEqual(mobile.me.faults, [options[0].id]);
+    assert.equal(mobile.me.faultVersion, 1);
+    assert.equal(mobile.me.faultCommands, undefined);
+    assert.deepEqual(mobile.participants, []);
+    assert.ok(!JSON.stringify(mobile).includes(host));
+    const requestId = randomBytes(32).toString("hex");
+    await post(host, { action: "reset", requestId });
+    await post(host, { action: "reset", requestId });
+    const reset = await (await get(host)).json();
+    assert.equal(reset.round, 2);
+    assert.equal(reset.participants.length, 0);
+    assert.equal((await post(phones[0], input)).status, 401);
+    await post(phones[0], { action: "join", name: "Participant 0" });
+    const rejoined = await (await get(phones[0])).json();
+    assert.equal(rejoined.me.id, "M001");
+    assert.equal((await post(host, { action: "end", requestId: randomBytes(32).toString("hex") })).status, 200);
+    assert.equal((await post(randomBytes(32).toString("hex"), { action: "join", name: "Late arrival" })).status, 409);
+  } finally {
+    if (previous === undefined) delete process.env.DEMO_DATA_DIR; else process.env.DEMO_DATA_DIR = previous;
+    await rm(directory, { recursive: true, force: true });
+  }
+});

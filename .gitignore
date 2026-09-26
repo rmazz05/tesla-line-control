@@ -4,5 +4,8 @@ out
 .DS_Store
 *.log
 *.tsbuildinfo
+.audience-demo/
+.manager-workspaces/
 .env*
 !.env.example
+.vercel

@@ -1,4 +1,14 @@
-# Five-minute demonstration, inside the app
+# Presentation and manager workflow
+
+Use **Audience demo** (`/demo`) for the presentation. The audience joins by QR and creates the faults; see [AUDIENCE_DEMO.md](./AUDIENCE_DEMO.md).
+
+Use the manager workspace (`/`) and **Demo controls** to test factory operations and phone-to-PC inspection; see [docs/MANAGER_WORKSPACE.md](./docs/MANAGER_WORKSPACE.md). Random simulations do not pause when a report opens.
+
+The historical five-minute script below is available only through **Demo controls → Scripted fixtures and workspace reset → 3-incident rehearsal**. Press **Run simulation** or **Next event** in the controls. This explicitly selected fixture still pauses at the simultaneous arrival. Use the current supervisor request → acknowledgment → verification workflow in place of the old direct dispatch steps.
+
+---
+
+# Historical scripted rehearsal
 
 Keep the app visible throughout. The factory and the supervisor's priority queue are the demonstration. There are no slides, presentation mode or separate evidence workspace.
 

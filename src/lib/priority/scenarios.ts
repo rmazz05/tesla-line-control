@@ -1,5 +1,5 @@
 import { CATALOG } from "./catalog";
-import type { FaultAssessment, ScenarioEvent } from "./types";
+import type { FaultAssessment, ScenarioEvent, SimulationState } from "./types";
 
 const arrivals: [number, string, string][] = [
   [0, "body-feed-interruption", "GA-12: external body replenishment stopped. Twenty bodies remain in the input buffer; the load station is still cycling."],
@@ -62,5 +62,6 @@ export const DEMO_EVENTS: ScenarioEvent[] = [
   evidence: [event.reportText, ...event.assessment.evidence.filter(text => !text.startsWith("Operator report at"))],
 } }));
 
-export function scenarioEvents(scenario?: "shift" | "demo") { return scenario === "demo" ? DEMO_EVENTS : SCENARIO_EVENTS; }
-export function scenarioDuration(scenario?: "shift" | "demo") { return scenario === "demo" ? 24 : 40; }
+export function scenarioEvents(scenario?: SimulationState["scenario"]) { return scenario === "manual" || scenario === "random" ? [] : scenario === "demo" ? DEMO_EVENTS : SCENARIO_EVENTS; }
+export function simulationEvents(state: SimulationState) { return state.scheduledEvents ?? scenarioEvents(state.scenario); }
+export function scenarioDuration(scenario?: SimulationState["scenario"]) { return scenario === "demo" ? 24 : 40; }

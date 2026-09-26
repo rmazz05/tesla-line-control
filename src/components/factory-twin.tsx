@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ContactShadows,
   OrbitControls,
   Preload,
   useAnimations,
@@ -9,14 +8,22 @@ import {
   useProgress,
 } from "@react-three/drei";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { WrenchIcon } from "@phosphor-icons/react";
+import { FactoryEquipment } from "./factory-equipment";
+import { ModelLighting, MODEL_URLS } from "./production-models";
+import { BerlinPlant } from "./berlin-plant";
+import { chooseCalloutLeader } from "@/lib/priority/plant-labels";
+import { PlantContext, ProjectPlantContext, type PlantContextRefs } from "./plant-context";
+import { PLANT_STATION_ANCHORS, LINE_CENTER, type PlantScope } from "@/lib/priority/plant-layout";
+import { FactoryNavigation, type FactoryViewCommand } from "./factory-navigation";
+import { WrenchIcon, PlusIcon, MinusIcon, ArrowsOutCardinalIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { Component, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type RefObject } from "react";
 import * as THREE from "three";
 import { getStation, type Incident, severityRank } from "@/lib/line-data";
 import { type RankedIncident, type StationId, type StationReading } from "@/lib/priority/types";
 import { getStationEffect, getStationStatus } from "@/lib/priority/station-effect";
-import { advanceFactoryVehicleSlots, createFactoryVehicleSlots, FACTORY_STATION_X, VEHICLE_ENTRY_X, VEHICLE_EXIT_X, VEHICLE_SLOT_COUNT, type FactoryVehicleSlot } from "@/lib/priority/factory-motion";
+import { advanceFactoryVehicleSlots, createFactoryVehicleSlots, VEHICLE_ENTRY_X, VEHICLE_EXIT_X, VEHICLE_SLOT_COUNT, type FactoryVehicleSlot } from "@/lib/priority/factory-motion";
 import { getIncidentPresentation } from "@/lib/priority/presentation";
+import { needsSupervisorAction } from "@/lib/priority/attention";
 import priorityStyles from "./priority-factory-twin.module.css";
 
 type FactoryTwinProps = {
@@ -163,7 +170,7 @@ function LineFloor({
         rotation={[-Math.PI / 2, 0, 0]}
         position={[0, -0.04, 0]}
       >
-        <planeGeometry args={[31, 9]} />
+        <planeGeometry args={[2000, 2000]} />
         <meshStandardMaterial
           color="#cfd3d5"
           roughness={0.92}
@@ -265,7 +272,7 @@ function SingleLineModel({
   priorityMotion?: { readings: StationReading[]; moving: boolean };
 }) {
   return (
-    <group>
+    <group name="assembly-line">
       <LineFloor selectedStationId={selectedStationId} selectedFloorX={selectedFloorX} />
 
       {conveyorPositions.map((x) => (
@@ -277,6 +284,7 @@ function SingleLineModel({
         />
       ))}
 
+      {priorityMotion && <FactoryEquipment readings={priorityMotion.readings} moving={priorityMotion.moving} />}
       {priorityMotion ? <FlowVehicles readings={priorityMotion.readings} moving={priorityMotion.moving} /> : <ReroutableVehicles rerouted={vehiclesRerouted} />}
 
       <LineAsset
@@ -577,7 +585,6 @@ function Scene({
   return (
     <>
       <color attach="background" args={["#e2e5e6"]} />
-      <fog attach="fog" args={["#e2e5e6", 38, 72]} />
       <hemisphereLight args={["#ffffff", "#7f858a", 2.35]} />
       <directionalLight
         castShadow
@@ -599,13 +606,6 @@ function Scene({
         selectedStationId={selected?.stationId}
         lineStopped={lineStopped}
         vehiclesRerouted={vehiclesRerouted}
-      />
-      <ContactShadows
-        position={[0, 0.02, 0]}
-        opacity={0.22}
-        scale={36}
-        blur={2.3}
-        far={9}
       />
       <IncidentMarkers
         incidents={incidents}
@@ -654,7 +654,7 @@ export function FactoryTwin({
       <Canvas
         shadows
         dpr={[1, 1.75]}
-        camera={{ position: [4, 20, 38], fov: 30, near: 0.1, far: 120 }}
+        camera={{ position: [4, 20, 38], fov: 30, near: 0.1, far: 2000 }}
         gl={{
           antialias: true,
           alpha: false,
@@ -682,26 +682,13 @@ type PriorityFactoryTwinProps = {
   simulationRun?: number;
   playing?: boolean;
   projection?: boolean;
+  /** Present only in the independent audience demo. Each person owns one dot. */
+  audience?: { id: string; name: string; stationId: StationId; hasFault: boolean; online: boolean }[];
   selectedId: string | null;
   onSelectIncident: (id: string) => void;
 };
 
-// Five original equipment anchors, with three additional logical process zones.
-// The priority simulation shares the original factory model without adding machinery.
-const priorityStationXs = FACTORY_STATION_X;
-
-// Attachment points lie on the existing equipment, not above it in empty space.
-// Extra process zones share the physical conveyor; inspection uses its exit bed.
-const priorityStationAnchors: Record<StationId, [number, number, number]> = {
-  "GA-12": [priorityStationXs["GA-12"], 0.43, 1.25],
-  "GA-18": [priorityStationXs["GA-18"], 0.43, 1.25],
-  "GA-24": [priorityStationXs["GA-24"], 1.8, 2.05],
-  "GA-28": [priorityStationXs["GA-28"], 0.43, 1.25],
-  "GA-32": [priorityStationXs["GA-32"], 2.7, -2.05],
-  "GA-36": [priorityStationXs["GA-36"], 0.43, 1.25],
-  "EOL-41": [priorityStationXs["EOL-41"], 0.72, 0],
-  "EOL-45": [priorityStationXs["EOL-45"], 0.72, 0],
-};
+const priorityStationAnchors = PLANT_STATION_ANCHORS;
 
 function subscribeToMotionPreference(onChange: () => void) {
   const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -711,31 +698,6 @@ function subscribeToMotionPreference(onChange: () => void) {
 
 function getMotionPreference() {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-}
-
-function PriorityCamera({ resetVersion }: { resetVersion: number }) {
-  const { camera, size, controls } = useThree();
-
-  useEffect(() => {
-    if (!(camera instanceof THREE.PerspectiveCamera)) return;
-    const compact = size.width < 650;
-    const target = new THREE.Vector3(0, compact ? 0.9 : 1.35, 0);
-    // Preserve the original viewing angle, perspective, and fog depth. Adapt
-    // the field of view to this shorter panel instead of rebuilding the line.
-    camera.position.set(compact ? 2 : 4, compact ? 15 : 20, 38);
-    const aspect = size.width / Math.max(size.height, 1);
-    const distance = camera.position.distanceTo(target);
-    camera.setFocalLength(camera.getFilmHeight() * distance * aspect / 34);
-    camera.lookAt(target);
-    camera.updateProjectionMatrix();
-    if (controls && "target" in controls) {
-      const orbit = controls as unknown as ControlsHandle;
-      orbit.target.copy(target);
-      orbit.update();
-    }
-  }, [camera, controls, resetVersion, size.width, size.height]);
-
-  return null;
 }
 
 /** Representative vehicles advance only where simulated material is flowing.
@@ -767,6 +729,7 @@ function PriorityStationMarker({
   onSelectIncident,
   floorRef,
   calloutRef,
+  audience,
 }: {
   reading: StationReading;
   stationRanking: RankedIncident[];
@@ -775,11 +738,12 @@ function PriorityStationMarker({
   onSelectIncident: (id: string) => void;
   floorRef: (element: HTMLDivElement | null) => void;
   calloutRef: (element: HTMLDivElement | null) => void;
+  audience?: PriorityFactoryTwinProps["audience"];
 }) {
   const selected = stationRanking.find((item) => item.incident.id === selectedId);
-  const waiting = stationRanking.find((item) => item.incident.status === "open");
-  const visible = (selected?.incident.status === "open" ? selected : waiting) ?? selected ?? stationRanking[0];
-  const repairing = visible?.incident.status === "repairing";
+  const waiting = stationRanking.find(needsSupervisorAction);
+  const visible = (selected && needsSupervisorAction(selected) ? selected : waiting) ?? selected ?? stationRanking[0];
+  const repairing = visible?.supervisorAction ? visible.supervisorAction.rank === null : visible?.incident.status === "repairing";
   const safety = stationRanking.some((item) => item.decision.evidence.safetyReview);
   const presentation = visible ? getIncidentPresentation(visible, minute) : null;
   const effect = getStationEffect(reading);
@@ -792,7 +756,7 @@ function PriorityStationMarker({
         </span>
       </div>
       <div ref={calloutRef} className={priorityStyles.calloutProjection}>
-        {visible && presentation ? (
+        {audience === undefined && (visible && presentation ? (
           <div className={priorityStyles.markerAnchor} data-station={reading.id} data-raised={["GA-18", "GA-28", "GA-36", "EOL-45"].includes(reading.id)}>
           <button
             type="button"
@@ -801,11 +765,12 @@ function PriorityStationMarker({
             data-safety={safety}
             data-repairing={repairing}
             data-urgency={presentation.urgency}
+            data-priority={visible.rank}
             onClick={(event) => {
               event.stopPropagation();
               onSelectIncident(visible.incident.id);
             }}
-            aria-label={`Highlight ${repairing ? "repair in progress" : `priority ${visible.rank}`}: ${presentation.title} at ${reading.id}. ${presentation.timingLabel}${stationRanking.length > 1 ? `. ${stationRanking.length} incidents at this station` : ""}`}
+            aria-label={`Highlight ${repairing ? visible.supervisorAction?.title ?? "repair in progress" : `priority ${visible.rank}`}: ${presentation.title} at ${reading.id}. ${presentation.timingLabel}${stationRanking.length > 1 ? `. ${stationRanking.length} incidents at this station` : ""}`}
             aria-pressed={Boolean(selected)}
             title={`${reading.id} · ${presentation.title} · ${presentation.timingLabel}`}
           >
@@ -818,7 +783,10 @@ function PriorityStationMarker({
         ) : effect.kind !== "running" ? <div className={priorityStyles.markerAnchor} data-station={reading.id} data-raised={["GA-18", "GA-28", "GA-36", "EOL-45"].includes(reading.id)}>
           <span className={priorityStyles.flowMarker} data-effect={status.tone} title={status.description}><strong>{reading.id}</strong>{status.label}</span>
           <span className={priorityStyles.markerLeader} aria-hidden="true" />
-        </div> : null}
+        </div> : null)}
+        {!!audience?.length && <div className={priorityStyles.audiencePresence} data-fault={audience.some(person => person.hasFault)} aria-label={`${reading.id}: ${audience.length} audience machines, ${audience.filter(person => person.hasFault).length} with faults`}>
+          <strong>{waiting ? `#${waiting.rank} · ` : ""}{reading.id}</strong><div>{audience.map(person => <span key={person.id} data-fault={person.hasFault} data-away={!person.online} title={`${person.name} · ${person.id} · ${person.hasFault ? "Fault selected" : "Healthy"}${!person.online ? " · Reconnecting" : ""}`} aria-label={`${person.name}, ${person.id}, ${person.hasFault ? "fault selected" : "healthy"}${!person.online ? ", reconnecting" : ""}`}>{person.hasFault ? "!" : ""}</span>)}</div>
+        </div>}
       </div>
     </>
   );
@@ -830,57 +798,30 @@ type IncidentLabelRefs = {
 };
 
 function PriorityScene({
-  ranking,
-  readings,
-  simulationRun = 0,
-  playing = false,
-  projection = false,
-  selectedId,
-  reducedMotion,
-  resetVersion,
-  projectionLabels,
-  floorLabels,
-  calloutLabels,
-}: PriorityFactoryTwinProps & IncidentLabelRefs & { reducedMotion: boolean; resetVersion: number; projectionLabels: RefObject<(HTMLSpanElement | null)[]> }) {
-  const selectedStation = ranking.find((item) => item.incident.id === selectedId)?.incident.assessment.stationId;
-  const selectedFloorX = selectedStation ? priorityStationXs[selectedStation] : null;
-  const moving = playing && !reducedMotion;
-  const lineStopped = !moving;
-  return (
-    <>
-      <color attach="background" args={["#e2e5e6"]} />
-      <fog attach="fog" args={["#e2e5e6", 38, 72]} />
-      <hemisphereLight args={["#ffffff", "#7f858a", 2.35]} />
-      <directionalLight castShadow intensity={3.15} position={[-12, 28, 16]} shadow-mapSize={[2048, 2048]} shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={14} shadow-camera-bottom={-14} shadow-bias={-0.00025} />
-      <directionalLight intensity={1.05} position={[20, 12, -16]} color="#dbe7f0" />
-      {/* Preserve animation state across clock ticks, pause/resume and dispatch.
-          Only an explicit simulation restart creates a fresh model. */}
-      <SingleLineModel key={simulationRun} selectedFloorX={selectedFloorX} lineStopped={lineStopped} vehiclesRerouted={false} priorityMotion={{ readings, moving }} />
-      <ContactShadows position={[0, 0.02, 0]} opacity={0.22} scale={36} blur={2.3} far={9} />
-      {readings.map((reading) => (
-          <group key={reading.id} position={[priorityStationXs[reading.id], 0, 0]}>
-            {(projection || getStationEffect(reading).kind !== "running") && <ProjectedStation reading={reading} />}
-          </group>
-      ))}
-      <OrbitControls makeDefault target={[0, 1.35, 0]} minDistance={8} maxDistance={54} minPolarAngle={0.35} maxPolarAngle={Math.PI / 2.08} enablePan={false} dampingFactor={0.08} />
-      <PriorityCamera resetVersion={resetVersion} />
-      {projection && <ProjectLabels labels={projectionLabels} readings={readings} />}
-      {!projection && <ProjectIncidentLabels floorLabels={floorLabels} calloutLabels={calloutLabels} readings={readings} />}
-      <Preload all />
-    </>
-  );
-}
-
-/** In a forecast the visible consequence matters, including stations with no fault of their own. */
-function ProjectedStation({ reading }: { reading: StationReading }) {
-  const effect = getStationEffect(reading);
-  const stopped = effect.kind === "stopped";
-  const waiting = getStationStatus(reading).tone === "waiting";
-  const color = waiting ? "#7d9199" : stopped ? "#b74136" : effect.kind === "slowed" ? "#b48739" : "#5f8e78";
-  return <mesh position={[0, .06, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[1.6, 4.4]} />
-      <meshBasicMaterial color={color} transparent opacity={waiting ? .2 : stopped ? .38 : effect.kind === "slowed" ? .28 : .12} depthWrite={false} />
-    </mesh>;
+  ranking, readings, simulationRun = 0, playing = false, projection = false,
+  selectedId, reducedMotion, viewCommand, navigationMode, projectionLabels,
+  floorLabels, calloutLabels, scope, contextRefs,
+}: PriorityFactoryTwinProps & IncidentLabelRefs & {
+  reducedMotion: boolean; viewCommand: FactoryViewCommand; navigationMode: "orbit" | "pan";
+  projectionLabels: RefObject<(HTMLSpanElement | null)[]>; scope: PlantScope; contextRefs: PlantContextRefs;
+}) {
+  const selectedStation = ranking.find(item => item.incident.id === selectedId)?.incident.assessment.stationId ?? undefined;
+  return <>
+    <color attach="background" args={[scope === "focus" ? "#dce2df" : "#d9e0de"]} />
+    <ModelLighting />
+    <hemisphereLight args={["#ffffff", "#818f90", 1.2]} />
+    <directionalLight castShadow intensity={2} position={[90, 110, 205]}
+      shadow-mapSize={[2048, 2048]} shadow-camera-left={-95} shadow-camera-right={95}
+      shadow-camera-top={65} shadow-camera-bottom={-65} shadow-camera-far={450} shadow-bias={-.0003}>
+      <object3D attach="target" position={[147,0,132]} />
+    </directionalLight>
+    <directionalLight intensity={.8} position={[250, 70, 40]} color="#d5e3ee" />
+    <BerlinPlant scope={scope} readings={readings} moving={playing && !reducedMotion} selectedStation={selectedStation} simulationRun={simulationRun} />
+    <FactoryNavigation scope={scope} mode={navigationMode} command={viewCommand} reducedMotion={reducedMotion} />
+    {projection && scope !== "plant" && <ProjectLabels labels={projectionLabels} readings={readings} />}
+    {!projection && scope !== "plant" && <ProjectIncidentLabels floorLabels={floorLabels} calloutLabels={calloutLabels} readings={readings} />}
+    <ProjectPlantContext scope={scope} {...contextRefs} />
+  </>;
 }
 
 // Keep labels in the parent React DOM tree so canvas teardown cannot synchronously
@@ -889,6 +830,7 @@ function ProjectIncidentLabels({ floorLabels, calloutLabels, readings }: Inciden
   const { camera, size } = useThree();
   const point = useMemo(() => new THREE.Vector3(), []);
   useFrame(() => {
+    const occupiedFloorLabels: { left: number; right: number; top: number; bottom: number }[] = [];
     const project = (element: HTMLDivElement | null, x: number, y: number, z: number) => {
       if (!element) return;
       point.set(x, y, z).project(camera);
@@ -896,8 +838,42 @@ function ProjectIncidentLabels({ floorLabels, calloutLabels, readings }: Inciden
       element.style.visibility = point.z >= -1 && point.z <= 1 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1 ? "visible" : "hidden";
     };
     readings.forEach((reading, index) => {
-      project(floorLabels.current[index], priorityStationXs[reading.id], 0.04, reading.id === "EOL-45" ? 4.9 : 3.7);
-      project(calloutLabels.current[index], ...priorityStationAnchors[reading.id]);
+      const floorLabel = floorLabels.current[index];
+      project(floorLabel, priorityStationAnchors[reading.id][0], 0.3, LINE_CENTER[2] + 8);
+      // At oblique angles, omit colliding background names rather than stacking text.
+      // Incident callouts stay visible and keep their exact equipment attachment.
+      if (floorLabel?.textContent && floorLabel.style.visibility === "visible") {
+        const x = (point.x + 1) * size.width / 2, y = (1 - point.y) * size.height / 2;
+        const halfWidth = floorLabel.offsetWidth / 2 + 4;
+        const box = { left: x - halfWidth, right: x + halfWidth, top: y - 10, bottom: y + 10 };
+        if (box.left < 0 || box.right > size.width || box.top < 0 || box.bottom > size.height || occupiedFloorLabels.some(other => box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top)) {
+          floorLabel.style.visibility = "hidden";
+        } else occupiedFloorLabels.push(box);
+      }
+    });
+    // At human height, distant stations converge in perspective. Prioritise
+    // incident buttons, then fit background flow labels into the remaining space.
+    const occupied: { left: number; right: number; top: number; bottom: number }[] = [];
+    const ordered = readings.map((reading, index) => ({ reading, element: calloutLabels.current[index] }))
+      .sort((a, b) => {
+        const importance = (element: HTMLDivElement | null) => element?.querySelector('[aria-pressed="true"]') ? 2 : element?.querySelector("button") ? 1 : 0;
+        const priority = (element: HTMLDivElement | null) => Number(element?.querySelector<HTMLElement>("[data-priority]")?.dataset.priority ?? Infinity);
+        return importance(b.element) - importance(a.element) || priority(a.element)-priority(b.element);
+      });
+    ordered.forEach(({ reading, element }) => {
+      project(element, ...priorityStationAnchors[reading.id]);
+      if (!element || element.style.visibility !== "visible") return;
+      const marker = element.querySelector<HTMLElement>(`.${priorityStyles.markerAnchor}`);
+      const leader = marker?.querySelector<HTMLElement>(`.${priorityStyles.markerLeader}`);
+      if (!marker || !leader) return; // Audience presence uses its own layout.
+      const x = (point.x + 1) * size.width / 2, y = (1 - point.y) * size.height / 2;
+      const halfWidth = marker.offsetWidth / 2 + 3;
+      const height = marker.offsetHeight - leader.offsetHeight;
+      const preferred = ["GA-18", "GA-28", "GA-36", "EOL-45"].includes(reading.id) ? 62 : 24;
+      const length = chooseCalloutLeader(x, y, halfWidth, height, size.width, size.height, preferred, occupied);
+      if (length === undefined) { element.style.visibility = "hidden"; return; }
+      marker.style.setProperty("--marker-leader", `${length}px`);
+      occupied.push({ left: x-halfWidth, right: x+halfWidth, top: y-length-height, bottom: y-length });
     });
   });
   return null;
@@ -933,45 +909,57 @@ function ProjectLabels({ labels, readings }: { labels: RefObject<(HTMLSpanElemen
   return null;
 }
 
-function FactoryUnavailable() {
-  return <div className={priorityStyles.unavailable}><strong>Factory view unavailable</strong><span>Select an incident from the priority list to continue.</span></div>;
+function FactoryUnavailable({ retry }: { retry?: () => void }) {
+  return <div className={priorityStyles.unavailable} role="alert"><strong>Factory view unavailable</strong><span>The 3D models could not load. The incident list remains available.</span>{retry && <button type="button" onClick={retry}>Retry 3D visualization</button>}</div>;
 }
 
 class PriorityCanvasBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
-  render() { return this.state.failed ? <FactoryUnavailable /> : this.props.children; }
+  render() { return this.state.failed ? <FactoryUnavailable retry={() => {
+    Object.values(MODEL_URLS).forEach(url => useGLTF.clear(url));
+    this.setState({ failed: false });
+  }} /> : this.props.children; }
 }
 
 /** Spatial overview of the same eight stations used by the incident simulation. */
 export function PriorityFactoryTwin(props: PriorityFactoryTwinProps) {
   const reducedMotion = useSyncExternalStore(subscribeToMotionPreference, getMotionPreference, () => true);
-  const [resetVersion, setResetVersion] = useState(0);
+  const [viewCommand, setViewCommand] = useState<FactoryViewCommand>({ id: 0, kind: "fit" });
+  const [navigationMode, setNavigationMode] = useState<"orbit" | "pan">("orbit");
+  const changeView = (kind: FactoryViewCommand["kind"]) => setViewCommand(previous => ({ id: previous.id + 1, kind }));
+  const [scope, setScope] = useState<PlantScope>("focus");
+  const plantLabels = useRef<(HTMLDivElement | null)[]>([]);
+  const compass = useRef<HTMLSpanElement | null>(null);
+  const scale = useRef<HTMLSpanElement | null>(null);
+  const contextRefs = { labels: plantLabels, compass, scale };
   const projectionLabels=useRef<(HTMLSpanElement|null)[]>([]);
   const floorLabels = useRef<(HTMLDivElement | null)[]>([]);
   const calloutLabels = useRef<(HTMLDivElement | null)[]>([]);
   return (
-    <div className={priorityStyles.shell}>
+    <div className={priorityStyles.shell} data-scope={scope} data-navigation={navigationMode} onContextMenu={event => event.preventDefault()}>
       <PriorityCanvasBoundary>
         <Canvas
           style={{ position: "absolute", inset: 0 }}
           shadows
           dpr={[1, 1.5]}
-          camera={{ position: [4, 20, 38], fov: 30, near: 0.1, far: 120 }}
+          camera={{ position: [147, 180, 350], fov: 38, near: 0.1, far: 5000 }}
           gl={{ antialias: true, alpha: false, powerPreference: "high-performance" }}
-          fallback={<FactoryUnavailable />}
+          role="img"
+          aria-label="Interactive Tesla production line with vehicles, equipment and station markers"
+          fallback={<span>Interactive production line. Use the schematic view if WebGL is unavailable.</span>}
           onCreated={({ gl }) => {
             gl.toneMapping = THREE.ACESFilmicToneMapping;
-            gl.toneMappingExposure = 1.05;
+            gl.toneMappingExposure = .9;
           }}
         >
           <Suspense fallback={null}>
-            <PriorityScene {...props} reducedMotion={reducedMotion} resetVersion={resetVersion} projectionLabels={projectionLabels} floorLabels={floorLabels} calloutLabels={calloutLabels} />
+            <PriorityScene {...props} scope={scope} contextRefs={contextRefs} reducedMotion={reducedMotion} viewCommand={viewCommand} navigationMode={navigationMode} projectionLabels={projectionLabels} floorLabels={floorLabels} calloutLabels={calloutLabels} />
           </Suspense>
         </Canvas>
       </PriorityCanvasBoundary>
-      {props.projection && <div className={priorityStyles.projectedLabels}>{props.readings.map((reading,index)=><span key={reading.id} ref={element=>{projectionLabels.current[index]=element;}} className={priorityStyles.projectedMarker} data-state={getStationStatus(reading).tone} title={getStationStatus(reading).description}><small>{reading.id}</small><strong>{getStationStatus(reading).label}</strong></span>)}</div>}
-      {!props.projection && <div className={priorityStyles.incidentLabels}>{props.readings.map((reading, index) => <PriorityStationMarker
+      {props.projection && scope !== "plant" && <div className={priorityStyles.projectedLabels}>{props.readings.map((reading,index)=><span key={reading.id} ref={element=>{projectionLabels.current[index]=element;}} className={priorityStyles.projectedMarker} data-state={getStationStatus(reading).tone} title={getStationStatus(reading).description}><small>{reading.id}</small><strong>{getStationStatus(reading).label}</strong></span>)}</div>}
+      {!props.projection && scope !== "plant" && <div className={priorityStyles.incidentLabels}>{props.readings.map((reading, index) => <PriorityStationMarker
         key={reading.id}
         reading={reading}
         stationRanking={props.ranking.filter((item) => item.incident.status !== "resolved" && item.incident.assessment.stationId === reading.id)}
@@ -980,20 +968,21 @@ export function PriorityFactoryTwin(props: PriorityFactoryTwinProps) {
         onSelectIncident={props.onSelectIncident}
         floorRef={(element) => { floorLabels.current[index] = element; }}
         calloutRef={(element) => { calloutLabels.current[index] = element; }}
+        audience={props.audience?.filter(person => person.stationId === reading.id)}
       />)}</div>}
+      <PlantContext scope={scope} setScope={setScope} {...contextRefs} projection={props.projection} />
       <div className={priorityStyles.controls}>
         {reducedMotion ? <span>Reduced motion enabled</span> : !props.playing && !props.projection ? <span>Simulation paused</span> : null}
-        <button type="button" onClick={() => setResetVersion((version) => version + 1)}>Reset view</button>
+        <div className={priorityStyles.viewTools} role="group" aria-label="Factory camera controls">
+          <button type="button" aria-pressed={navigationMode === "orbit"} onClick={() => setNavigationMode("orbit")} title="Drag to orbit; right-drag to pan">Orbit</button>
+          <button type="button" aria-pressed={navigationMode === "pan"} onClick={() => setNavigationMode("pan")} title="Drag to pan; right-drag to orbit"><ArrowsOutCardinalIcon size={14} />Pan</button>
+          {scope !== "plant" && <button type="button" title="Stand in the supervisor aisle beside body input" onClick={() => changeView("supervisor")}>Floor view</button>}
+          <button type="button" aria-label="Zoom in" onClick={() => changeView("in")}><PlusIcon size={15} /></button>
+          <button type="button" aria-label="Zoom out" onClick={() => changeView("out")}><MinusIcon size={15} /></button>
+          <button type="button" onClick={() => changeView("fit")}><ArrowCounterClockwiseIcon size={14} />Fit view</button>
+        </div>
       </div>
       <ProgressOverlay />
     </div>
   );
 }
-
-[
-  "/assets/line/conveyor.glb",
-  "/assets/vehicles/tesla-model-3.glb",
-  "/assets/line/glass-robot.glb",
-  "/assets/line/wheel-station.glb",
-  "/assets/line/roller-test.glb",
-].forEach((src) => useGLTF.preload(src));

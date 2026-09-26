@@ -1,0 +1,17 @@
+.body { display: flex; flex-direction: column; gap: 16px; }
+.body > button { align-self: flex-start; }
+.link { display: grid; gap: 8px; margin: 0; }
+.link input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #596970;
+  border-radius: 6px;
+  background: #121a1e;
+  color: #e1e9ef;
+  font: inherit;
+  font-size: 16px;
+}
+.link input:focus { outline: 2px solid #b7dcf0; outline-offset: 2px; }

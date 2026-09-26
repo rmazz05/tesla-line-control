@@ -1,5 +1,13 @@
 # PROJECT CONTEXT — Tesla Hackathon Production Supervisor
 
+The main manager workspace now uses a supervisor attention workflow: next action,
+named acknowledgment, monitored commitments, verified handback and explicit area
+restart. See [SUPERVISOR_ATTENTION.md](./SUPERVISOR_ATTENTION.md). Earlier repair-only
+walkthroughs below apply to the legacy simulation; do not use their benchmark or
+automatic completion behavior as evidence for the supervisor workflow.
+
+A production-supervisor prototype focused on dynamic incident prioritization for the Tesla **Built for the Job** hackathon track.
+
 ## 1. Context
 
 We are developing a prototype for a Tesla hackathon.
@@ -8,7 +16,27 @@ The operating environment is a Tesla Gigafactory / moving automotive production 
 
 Our ONLY target user is the:
 
+The app has three separate uses:
+
+- **Manager workspace (`/`)**: the supervisor’s phone queue and desktop inspection view share persistent server state. On a phone, open an incident and choose **Inspect on PC**. Its report opens beside the 3D factory and schematic in the connected PC browser. Use **Connect devices** to pair them with a private link/QR code. The PC page must be open; a pending inspection is retained if it is disconnected.
+- **Demo controls**: the factory simulation console inside the manager workspace. Choose **New random run**, then **Run simulation**. Arrival times and fault types vary, while **Replay seed** repeats a run with the same seed, duration and frequency. Playback, speed, stepping and reset are confined to this console. Opening an incident or working on the phone does not pause the clock.
+- **Audience demo (`/demo`)**: the separate QR-code presentation. Audience members toggle faults on assigned machines; it has its own rooms, controls and clock.
+
+A new manager workspace starts empty in **Manual reports only** mode. Real factory telemetry is not connected. Manual/AI-assessed reports and synthetic simulations use the same prioritization and supervisor workflow. Requests require a named acknowledgment; simulated team returns require explicit verification. Protection and restart confirmations remain supervisor actions.
+
+The original, deterministic operations walkthrough remains at `/operations` as a legacy prototype, not the manager workspace. See [docs/MANAGER_WORKSPACE.md](./docs/MANAGER_WORKSPACE.md) for setup, limits and verification.
+
 **Production Supervisor**
+
+Do not expand the product into Production Engineering, root-cause analysis, process optimization, machine redesign, or long-term manufacturing improvement.
+
+For the separate QR-code audience presentation, open `/demo`, create or restore a room, and show the QR panel. It automatically prepares and verifies access for phones on any Wi-Fi network or mobile data. Wait for **Ready for the audience**; no Terminal commands or address entry are needed in the presentation flow. See [AUDIENCE_DEMO.md](./AUDIENCE_DEMO.md) for participation, recovery and developer startup details.
+
+To connect phones on any internet-connected Wi-Fi network or mobile data, open **Connect devices** in the local manager workspace. The server automatically prepares a temporary public connection and displays the workspace QR; the PC stays on its local page. Keep the computer awake, online, and the app running. The host needs `cloudflared` installed (`brew install cloudflared` on macOS, or set `CLOUDFLARED_BIN` to the executable path). No provider configuration or address entry appears in the app. Reopening the panel reuses the active connection; restarting the server requires a new QR.
+
+For an optional terminal-based production launcher, run `npm run build` then `npm run share`. It starts the app and a temporary public connection on port 3101 and prints manager and audience URLs. Both launch modes use the same persistent manager store.
+
+Requirements:
 
 Do not expand the product into Production Engineering, root-cause analysis, process optimization, machine redesign, or long-term manufacturing improvement.
 
@@ -150,6 +178,21 @@ The system provides DECISION SUPPORT.
 The supervisor always retains final decision authority.
 
 ---
+
+## 6. Important Operational Rules
+
+Some events should not be treated as ordinary priority scoring.
+
+There are hard operational constraints.
+
+## Test the manager workflow
+
+1. Open `/` in the local app on the PC, choose **Connect devices**, wait for **Ready to connect**, and scan the QR with the phone. Any internet-connected Wi-Fi network or mobile data works.
+2. In **Demo controls**, select frequency and duration, choose **New random run**, then **Run simulation**. Record the displayed seed to reproduce arrivals later.
+3. Close controls and walk through the phone queue. Reports do not stop the factory. Use **Inspect on PC** to open the same incident on the desktop with the 3D factory and schematic available.
+4. Record the response request and a named acknowledgment. Confirm protection where required. Simulated work returns for verification, then explicitly verify and close it. Confirm area restart separately if the area is held.
+5. Use the controls to pause, step time, advance to the next event or team returns, and inspect produced/lost units and stopped minutes. Replaying a seed with different response decisions lets you test the impact of the workflow. There is no automatic claim of optimality or real-world savings.
+6. The former fixed three-incident and ten-incident sequences remain under **Scripted fixtures and workspace reset** for regression/rehearsal. They are intentionally deterministic.
 
 ## 6. Important Operational Rules
 
@@ -475,6 +518,10 @@ The realtime layer can use:
 - Supabase Realtime;
 - Firebase;
 - or an equivalent technology.
+
+Shared manager workspaces and audience rooms use Postgres when `DATABASE_URL` is set. Without it, local demos use persistent files on one Node server. Vercel requires the shared database; phone pairing and audience QR codes use the deployed HTTPS address directly.
+
+For Vercel setup and database initialization, see [docs/VERCEL_DEPLOYMENT.md](./docs/VERCEL_DEPLOYMENT.md).
 
 ---
 

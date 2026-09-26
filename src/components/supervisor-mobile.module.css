@@ -1,0 +1,63 @@
+.theme {
+  --phone-bg: #141617;
+  --phone-surface: #1d2022;
+  --phone-raised: #25292b;
+  --phone-pressed: #303638;
+  --phone-text: #f3f3ef;
+  --phone-secondary: #c9ccca;
+  --phone-muted: #a2aaa7;
+  --phone-line: #303537;
+  --phone-border: #515957;
+  --phone-focus: #d4dfd9;
+  --phone-success: #b2d0be;
+  --phone-warning: #e9c790;
+  --phone-danger: #f3aba2;
+  --phone-danger-surface: #2b2222;
+  --phone-primary: #eeefea;
+  --phone-on-primary: #191d1b;
+  height: auto; min-height: 100dvh; background: var(--phone-bg); color: var(--phone-text);
+}
+.theme dialog {
+  width: 100%; max-width: 100%; height: 100dvh; max-height: 100dvh; margin: 0;
+  border: 0; border-radius: 0; box-shadow: none; overflow: hidden;
+  background: var(--phone-bg); color: var(--phone-text); font-size: 1rem;
+}
+.theme .panelHeading {
+  min-height: 72px; padding: max(12px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left));
+  background: var(--phone-bg); border-bottom: 1px solid var(--phone-line); flex-shrink: 0;
+}
+.theme .panelHeading h2 { font-size: 1rem; font-weight: 500; }
+.theme .panelHeading[data-back="true"] { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 8px; padding-inline: 16px; }
+.theme .panelHeading[data-back="true"] h2 { text-align: center; }
+.theme dialog :is(button, summary, select) { min-height: 44px; touch-action: manipulation; }
+.theme dialog :is(input:not([type="checkbox"]), textarea, select) { font-size: 1rem; }
+.theme dialog button { transition: background-color 180ms ease-out, color 180ms ease-out; }
+.theme .panelHeading button { min-width: 44px; border-radius: 50%; background: transparent; box-shadow: none; border: 0; color: var(--phone-secondary); }
+.theme .report { padding: 28px 24px max(32px, env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+.theme .report > h3 { font-size: 1.75rem; font-weight: 500; line-height: 1.25; letter-spacing: -.035em; margin-block: 14px 24px !important; }
+.theme .report > details { border-color: var(--phone-line); margin-top: 0; padding-top: 0; }
+.theme .report > details > summary { padding-block: 18px; min-height: 56px; color: var(--phone-secondary); font-size: 0.9375rem; }
+.theme .report p, .theme .report li { overflow-wrap: anywhere; }
+.handoff { margin-bottom: 28px; }
+.handoff > button { display: flex; align-items: center; gap: 14px; width: 100%; padding: 16px; text-align: left; color: var(--phone-text); background: var(--phone-surface); border: 1px solid var(--phone-line); border-radius: 12px; font-size: 0.9375rem; }
+.handoff > button > span { flex: 1; }
+.handoff small { display: block; margin-top: 4px; font-size: 0.75rem; font-weight: 400; color: var(--phone-muted); }
+.handoff svg { flex-shrink: 0; color: var(--phone-secondary); }
+.handoff p { font-size: 0.875rem; line-height: 1.5; margin-top: 12px; color: var(--phone-secondary); }
+.handoff > .connectLink { margin-top: 8px; border: 0; background: transparent; padding: 8px 0; text-decoration: underline; }
+.workspace { display: flex; flex-direction: column; padding: 32px 24px; }
+.workspaceIdentity { margin-bottom: 32px; }
+.analysisHeader { padding: max(12px, env(safe-area-inset-top)) 20px 12px; border-bottom: 1px solid var(--phone-line); background: var(--phone-bg); }
+.analysisHeader button { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px; border: 0; background: transparent; color: var(--phone-text); font-size: 1rem; }
+.workspaceIdentity > span { font-family: "Geist Mono", monospace; font-size: 0.75rem; color: var(--phone-muted); }
+.workspaceIdentity h3 { font-size: 1.625rem; letter-spacing: -.03em; font-weight: 500; margin-top: 10px; }
+.workspaceIdentity p { margin-top: 8px; font-size: 0.875rem; color: var(--phone-muted); }
+.workspaceOption { display: flex; gap: 16px; align-items: center; width: 100%; padding: 20px 0; text-align: left; background: transparent; color: var(--phone-text); border: 0; border-bottom: 1px solid var(--phone-line); }
+.workspaceOption > span { flex: 1; }
+.workspaceOption > svg { flex-shrink: 0; color: var(--phone-secondary); }
+.workspaceOption small { display: block; margin-top: 6px; font-size: 0.8125rem; color: var(--phone-muted); }
+.workspace .workspaceNote { margin: 28px 0 16px; color: var(--phone-muted); font-size: 0.875rem; line-height: 1.65; }
+.theme dialog button:active:not(:disabled) { background-color: var(--phone-pressed); }
+.theme dialog button:disabled { opacity: .45; }
+@media (min-width: 600px) { .theme .report, .theme .workspace { padding-inline: max(24px, calc((100vw - 592px) / 2)); } }
+@media (prefers-reduced-motion: reduce) { .theme *, .theme *::before, .theme *::after { transition: none !important; animation: none !important; scroll-behavior: auto !important; } }

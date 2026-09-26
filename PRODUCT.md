@@ -1,5 +1,24 @@
 # Product
 
+## Current supervisor workflow
+
+The primary stakeholder is the production supervisor running this shift. The main
+workspace now presents **Needs you**, **Awaiting acknowledgment**, and **Being
+handled**, with concrete next actions. Calls require a named acknowledgment;
+returned work requires recorded supervisor verification. Personnel concerns and
+spreading quality problems hold the whole modeled area. Equipment isolation,
+product containment, and area restart are distinct confirmations. Handover notes
+accumulate from recorded actions. The queue and factory markers share the same
+attention order. This supersedes the repair-only queue and automatic completion
+described in earlier sections below. See [SUPERVISOR_ATTENTION.md](./SUPERVISOR_ATTENTION.md)
+for the policy, assumptions, tests and remaining scope.
+
+## Independent audience demo
+
+The audience mode at `/demo` is a separate optional presentation flow. Spectators scan a QR link to `/join/[code]`, enter a first name, receive a persistent machine assignment, and select any of three station-specific synthetic faults. Up to 120 virtual audience machines are distributed across the eight existing logical stations. Duplicate reports aggregate by fault; each participant keeps their own selections. The original product and its prepared scenarios remain independent.
+
+The presenter controls lobby, start, pause, reset, containment and maintenance. Green presence indicators mean joined and healthy; red indicates a selected fault, while the repair queue retains the engine's urgency colors. Use the original factory view plus an optional lightweight machine map. Phones never load the 3D factory. Keep the dark product identity, large touch controls, clear saved/sending/reconnecting states, and an explicit paused state. Run on one persistent laptop/Node server with atomic disk persistence and ordinary HTTP polling. See AUDIENCE_DEMO.md for operation and limitations.
+
 ## Register
 
 product
@@ -80,3 +99,7 @@ The focused demonstration starts healthy, then injects all three reports simulta
 ## In-app presentation flow
 
 The current demo stays in the working application. Remove the slide-based pitch and separate evidence workspace. The factory remains visible throughout incident review. On desktop, selecting an incident replaces the right queue with an inspector and a Back to priorities action; it does not dim or replace the factory. Mobile retains its full-screen report. New AI reports highlight the queue entry without switching screens or opening a report. The focused scenario still starts healthy, introduces three simultaneous incidents and pauses for the supervisor. Presentation notes live in DEMO_GUIDE.md, not on app screens.
+
+## Source-based plant context
+
+The supervisor can switch between the whole 2023 Berlin plant layout and their illustrative line inside general assembly. This replaces the priority view's original isolated asset geometry while retaining the original operations view. The line includes working-scale access, material staging, equipment and supervisory context. Source-backed architecture and inferred line equipment must remain distinguishable through the plan reference. Current as-built conditions, exact Tesla station routing and supervisor software are not verified.

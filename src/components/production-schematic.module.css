@@ -1,0 +1,81 @@
+.schematic {
+  --map-bg: #f0f3f4; --map-surface: #fff; --map-text: #23343d; --map-muted: #536670;
+  --map-border: #c2cdd2; --map-track: #738994; --map-danger: #a72c36; --map-warning: #865b10;
+  --map-blue: #3d6073; --map-green: #376954;
+  height: 100%; overflow: auto; display: flex; flex-direction: column; color: var(--map-text); background: var(--map-bg);
+  container-type: inline-size;
+}
+.map { flex: 1; display: grid; align-items: center; padding: 28px 40px; min-height: 330px; }
+.stations { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); column-gap: 24px; row-gap: 48px; }
+.station { position: relative; min-width: 0; display: flex; }
+.station[data-index="4"] { grid-column: 4; grid-row: 2; }
+.station[data-index="5"] { grid-column: 3; grid-row: 2; }
+.station[data-index="6"] { grid-column: 2; grid-row: 2; }
+.station[data-index="7"] { grid-column: 1; grid-row: 2; }
+.node { --node-accent: var(--map-blue); position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; padding: 12px; text-align: left; border: 1px solid var(--map-border); border-radius: 6px; background: var(--map-surface); color: var(--map-text); }
+.node:not(button) { background: #e8eef0; }
+button.node { border-top: 3px solid var(--node-accent); padding-top: 10px; cursor: pointer; transition: background 160ms ease, box-shadow 160ms ease; }
+button.node:hover { background: #f7fafb; box-shadow: 0 2px 8px #23343d12; }
+.node[data-selected="true"] { outline: 2px solid var(--node-accent); outline-offset: 3px; }
+.node:focus-visible { outline: 3px solid var(--map-blue); outline-offset: 4px; }
+.node[data-urgency="critical"] { --node-accent: var(--map-danger); }
+.node[data-urgency="warning"] { --node-accent: var(--map-warning); }
+.node[data-urgency="repairing"] { --node-accent: var(--map-green); }
+.nodeHeading { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 21px; flex-wrap: wrap; }
+.stationCode { font-size: 12px; font-weight: 500; color: var(--map-muted); font-variant-numeric: tabular-nums; }
+.priority { display: inline-flex; align-items: center; gap: 4px; color: var(--node-accent); font-size: 12px; font-weight: 600; }
+.priority b { font-variant-numeric: tabular-nums; }
+.stationName { font-size: 16px; font-weight: 600; line-height: 1.4; margin-top: 7px; }
+.problem { display: block; min-height: 34px; margin: 5px 0 10px; font-size: 12px; line-height: 1.4; color: var(--node-accent); overflow-wrap: anywhere; }
+.production { display: flex; align-items: flex-start; gap: 5px; color: var(--map-muted); font-size: 12px; line-height: 1.4; margin-top: auto; border-top: 1px solid #e5eaed; padding-top: 8px; }
+.production svg { flex-shrink: 0; margin-top: 1px; }
+.production[data-state="stopped"] { color: var(--map-danger); }
+.production[data-state="slowed"] { color: var(--map-warning); }
+.production[data-state="running"] svg { color: var(--map-green); }
+.more { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--map-muted); margin-top: 8px; }
+.connector { position: absolute; left: 100%; width: 24px; top: 50%; height: 2px; background: var(--map-track); pointer-events: none; }
+.connector svg { position: absolute; top: -7px; left: 4px; color: var(--map-track); background: var(--map-bg); }
+.station[data-index="3"] .connector { left: 100%; top: 50%; width: 24px; height: calc(100% + 48px); border: 2px solid var(--map-track); border-left: 0; border-radius: 0 14px 14px 0; background: none; }
+.station[data-index="3"] .connector svg { top: auto; bottom: -9px; left: -4px; transform: rotate(180deg); }
+.station:is([data-index="4"], [data-index="5"], [data-index="6"]) .connector { left: auto; right: 100%; }
+.station:is([data-index="4"], [data-index="5"], [data-index="6"]) .connector svg { transform: rotate(180deg); }
+.caption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px 20px; padding: 12px 28px 18px; color: var(--map-muted); font-size: 12px; }
+.caption > span { display: flex; align-items: center; gap: 8px; }
+.rankKey { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--map-border); border-radius: 3px; font-weight: 600; }
+.unlocated { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 24px; border-top: 1px solid var(--map-border); color: var(--map-muted); font-size: 12px; }
+.unlocated button { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; background: var(--map-surface); border: 1px solid var(--map-border); border-radius: 4px; padding: 8px; color: var(--map-text); }
+@container (max-width: 620px) {
+  .map { padding: 24px 28px 24px 20px; }
+  .stations { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 20px; }
+  .station[data-index="0"] { grid-area: 1 / 1; }
+  .station[data-index="1"] { grid-area: 1 / 2; }
+  .station[data-index="2"] { grid-area: 2 / 2; }
+  .station[data-index="3"] { grid-area: 2 / 1; }
+  .station[data-index="4"] { grid-area: 3 / 1; }
+  .station[data-index="5"] { grid-area: 3 / 2; }
+  .station[data-index="6"] { grid-area: 4 / 2; }
+  .station[data-index="7"] { grid-area: 4 / 1; }
+  .station:nth-child(2n + 1) .connector { left: 100%; right: auto; width: 20px; }
+  .station:nth-child(2n + 1) .connector svg { transform: none; left: 2px; }
+  .station:nth-child(4n + 3) .connector { left: auto; right: 100%; }
+  .station:nth-child(4n + 3) .connector svg { transform: rotate(180deg); }
+  .station:nth-child(2n) .connector { left: 50%; right: auto; top: 100%; width: 2px; height: 32px; border: 0; border-radius: 0; background: var(--map-track); }
+  .station:nth-child(2n) .connector svg { top: 8px; bottom: auto; left: -7px; transform: rotate(90deg); }
+  .caption { padding-inline: 20px; }
+}
+@media (prefers-reduced-motion: reduce) { button.node { transition: none; } }
+@media (max-height: 740px) {
+  .map { min-height: 0; padding-block: 16px; }
+  .stations { row-gap: 28px; }
+  .node { padding: 8px 10px; }
+  button.node { padding-top: 6px; }
+  .stationName { margin-top: 4px; font-size: 15px; }
+  .problem { min-height: 17px; margin: 3px 0 6px; }
+  .production { padding-top: 6px; }
+  .station[data-index="3"] .connector { height: calc(100% + 28px); }
+  .caption { padding-block: 6px 10px; }
+  @container (max-width: 620px) {
+    .stations { row-gap: 32px; }
+    .station:nth-child(2n) .connector { height: 32px; }
+  }
+}

@@ -1,0 +1,11 @@
+.env*
+.manager-workspaces/
+.audience-demo/
+.git/
+.agents/
+.claude/
+skills-lock.json
+docs/
+tests/
+*.tsbuildinfo
+*.log

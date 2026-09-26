@@ -48,6 +48,9 @@ export interface PriorityIncident {
   assessment: FaultAssessment;
   /** Supervisor action only; never supplied by AI or inferred from dispatch. */
   containmentConfirmedAtMinute?: number | null;
+  containmentMode?: "equipment-isolated" | "product-held";
+  /** Recorded human handoff; neither AI nor a request can acknowledge itself. */
+  response?: SupervisorResponse;
   repairStartedAtMinute: number | null;
   repairCompletesAtMinute: number | null;
   resolvedAtMinute: number | null;
@@ -71,7 +74,11 @@ export interface RankChange {
 }
 
 export interface SimulationState {
-  scenario?: "shift" | "demo";
+  /** The supervisor workflow is enabled by the main app; legacy replay tools remain available. */
+  supervisor?: SupervisorState;
+  scenario?: "shift" | "demo" | "random" | "manual";
+  /** Explicit event source. Empty means no synthetic arrivals. Forecasts never inject these. */
+  scheduledEvents?: ScenarioEvent[];
   minute: number;
   incidents: PriorityIncident[];
   /** Input buffers indexed in STATION_IDS order. */
@@ -87,6 +94,21 @@ export interface SimulationState {
   teams: MaintenanceTeam[];
 }
 
+export type ResponseTeam = "Maintenance" | "Quality" | "Material flow" | "Engineering";
+export interface SupervisorResponse {
+  team: ResponseTeam;
+  requestedAt: number;
+  acknowledgedAt: number | null;
+  owner: string | null;
+  checkpointAt: number;
+  readyAt: number | null;
+}
+export interface SupervisorState {
+  areaStopped: boolean;
+  focus: { actionId: string; untilMinute: number } | null;
+  log: { minute: number; text: string }[];
+}
+
 /** A record of an individual maintenance response, not a capacity reservation. */
 export interface MaintenanceTeam {
   id: string;
@@ -99,6 +121,7 @@ export interface MaintenanceTeam {
 }
 
 export interface RankedIncident {
+  supervisorAction?: { rank: number | null; title: string; reason: string; timing: string; urgency: import("./policy").Urgency };
   incident: PriorityIncident;
   decision: import("./policy").PriorityDecision;
   /** Current connected-flow reading, shared with the factory visualization. */

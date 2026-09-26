@@ -1,8 +1,9 @@
 import { assessConsequences } from "./case-library";
+import { ACKNOWLEDGMENT_MINUTES, REVIEW_CHECKPOINT_MINUTES, SUPERVISOR_ACTION_MINUTES, areaBlockers, areaIsHeld, canRestartArea, equipmentIsolated, getAttentionPlan, responseTeam } from "./attention";
 import { estimatedRepairMinutes, keepsRunningDuringRepair } from "./repair";
 import { compareDecisions, PRIORITY_RULE, priorityDecision, type ImpactEvent } from "./policy";
 import { FLOW_STEP_MINUTES, LOOKAHEAD_MINUTES, SIMULATION_MINUTES, STATIONS } from "./config";
-import { scenarioEvents } from "./scenarios";
+import { simulationEvents } from "./scenarios";
 import type { BenchmarkResult, FaultAssessment, MaintenanceTeam, PriorityIncident, RankedIncident, SimulationState, StationReading, WhatIfChange, WhatIfBranch, WhatIfResult, ProjectionFrame, RippleEvent } from "./types";
 
 const EPS = 1e-7;
@@ -16,7 +17,7 @@ type Detail = { event: ImpactEvent; critical: number | null; slack: number | nul
 const rankedCache = new WeakMap<SimulationState, RankedIncident[]>();
 
 function clone(state: SimulationState): SimulationState {
-  return { ...state, buffers: [...state.buffers], incidents: state.incidents.map((incident) => ({ ...incident, history: [...incident.history] })), teams: state.teams.map((team) => ({ ...team, skills: [...team.skills] })), injectedEventIds: [...state.injectedEventIds], rankChanges: [...state.rankChanges], previousOrder: [...state.previousOrder] };
+  return { ...state, supervisor: state.supervisor ? { ...state.supervisor, focus: state.supervisor.focus ? { ...state.supervisor.focus } : null, log: [...state.supervisor.log] } : undefined, buffers: [...state.buffers], incidents: state.incidents.map((incident) => ({ ...incident, response: incident.response ? { ...incident.response } : undefined, history: [...incident.history] })), teams: state.teams.map((team) => ({ ...team, skills: [...team.skills] })), injectedEventIds: [...state.injectedEventIds], rankChanges: [...state.rankChanges], previousOrder: [...state.previousOrder] };
 }
 
 function active(state: SimulationState) { return state.incidents.filter((incident) => incident.status !== "resolved"); }
@@ -26,6 +27,7 @@ function safetyTier(incident: PriorityIncident) { return incident.assessment.saf
 function actionable(incident: PriorityIncident) { return !incident.assessment.needsReview && incident.assessment.stationId !== null && incident.assessment.kind !== "unknown" && incident.assessment.repairMinutes.max > 0; }
 /** Station faults multiply, so clearing one cannot silently clear another. Supply restricts external ingress. */
 function capacities(state: SimulationState) {
+  if (areaIsHeld(state)) return { rates: STATIONS.map(() => 0), external: 0 };
   const rates = STATIONS.map((station) => station.ratePerMinute);
   let external = STATIONS[0].ratePerMinute;
   for (const incident of active(state)) {
@@ -35,14 +37,14 @@ function capacities(state: SimulationState) {
     // Unverified generic reports cannot silently create quantitative production
     // effects; a reported safety concern still triggers the explicit hold rule.
     const factor = assessment.needsReview ? 1 : Math.max(0, Math.min(1, assessment.capacityFactor));
-    if (safetyTier(incident) > 0 || incident.containmentConfirmedAtMinute != null) rates[index] = 0;
+    if (safetyTier(incident) > 0 || equipmentIsolated(incident)) rates[index] = 0;
     if (assessment.kind === "supply") {
       // The catalog's only supply boundary is external replenishment at GA-12.
       if (index === 0) external *= factor;
       continue;
     }
     const expired = !assessment.needsReview && assessment.criticalAfterMinutes !== null && state.minute + EPS >= incident.reportedAtMinute + assessment.criticalAfterMinutes;
-    const held = incident.containmentConfirmedAtMinute != null || safetyTier(incident) > 0 || (incident.status === "repairing" && !keepsRunningDuringRepair(assessment)) || (expired && (assessment.kind === "condition" || assessment.kind === "quality"));
+    const held = equipmentIsolated(incident) || safetyTier(incident) > 0 || (incident.status === "repairing" && !keepsRunningDuringRepair(assessment)) || (expired && (assessment.kind === "condition" || assessment.kind === "quality"));
     rates[index] *= held ? 0 : factor;
   }
   return { rates, external };
@@ -86,6 +88,15 @@ function instantaneousFlows(state: SimulationState) {
 }
 
 function finish(state: SimulationState, incident: PriorityIncident, manual: boolean) {
+  if (state.supervisor && !manual) {
+    if (incident.response) {
+      incident.response.readyAt = state.minute;
+      incident.response.checkpointAt = state.minute;
+    }
+    incident.repairCompletesAtMinute = null;
+    incident.history.push({ minute: state.minute, text: "Team returned the work. Supervisor verification is required before release." });
+    return;
+  }
   incident.status = "resolved";
   incident.resolvedAtMinute = state.minute;
   incident.history.push({ minute: state.minute, text: manual ? "Supervisor marked response and verification complete." : "Repair and checks completed within the estimated response duration." });
@@ -133,9 +144,12 @@ function makeIncident(state: SimulationState, assessment: FaultAssessment, repor
 }
 
 function injectDueEvents(state: SimulationState) {
-  for (const event of scenarioEvents(state.scenario)) {
+  for (const event of simulationEvents(state)) {
     if (event.minute <= state.minute + EPS && !state.injectedEventIds.includes(event.id)) {
       state.injectedEventIds.push(event.id);
+      // A machine cannot develop the same outstanding fault repeatedly. Once
+      // verified closed, a later random occurrence may create a new incident.
+      if (state.scenario === "random" && state.incidents.some(i => i.status !== "resolved" && i.assessment.catalogId === event.assessment.catalogId && i.assessment.stationId === event.assessment.stationId)) continue;
       state.incidents.push(makeIncident(state, event.assessment, event.reportText, event.id));
     }
   }
@@ -161,6 +175,7 @@ function assign(state: SimulationState, incident: PriorityIncident, team: Mainte
 
 /** Critical event is conditional on actual connected flow, not incident age. */
 function criticalForecast(state: SimulationState, incident: PriorityIncident): { minutes: number | null; event: ImpactEvent } {
+  if (state.supervisor && areaIsHeld(state)) return { minutes: null, event: "unknown" };
   if (safetyTier(incident) || incident.containmentConfirmedAtMinute != null) return { minutes: 0, event: "safety_hold" };
   const assessment = incident.assessment;
   if (!actionable(incident)) return { minutes: null, event: "unknown" };
@@ -211,6 +226,7 @@ function simpleOrder(state: SimulationState, policy: Policy, criticals?: Map<str
 }
 
 function dispatchOrder(state: SimulationState, order: string[], deferredId?: string, deferUntil = 0) {
+  if (state.supervisor) return; // A simulation tick cannot manufacture a human acknowledgment.
   for (const id of order) {
     const incident = state.incidents.find((item) => item.id === id);
     if (!incident || incident.status !== "open" || !actionable(incident) || assessConsequences(incident).safetyReview || assessConsequences(incident).uncontainedSpread || (id === deferredId && state.minute < deferUntil - EPS)) continue;
@@ -261,15 +277,15 @@ function calculateRanking(state: SimulationState): RankedIncident[] {
   const impacts = new Map(incidents.map((incident) => [incident.id, criticalForecast(state, incident)]));
   const criticals = new Map(incidents.map((incident) => [incident.id, impacts.get(incident.id)!.minutes]));
   const fallback = simpleOrder(state, "deadline", criticals).map((incident) => incident.id);
-  const baseline = rollout(state, null, fallback);
+  const baseline = state.supervisor ? { missedWindows: 0, lostUnits: 0, unfinishedMinutes: 0 } : rollout(state, null, fallback);
   for (const incident of incidents) {
     const team = chooseTeam(state, incident);
     const wait = 0;
     const critical = criticals.get(incident.id) ?? null;
     const restoration = incident.status === "repairing" ? Math.max(0, (incident.repairCompletesAtMinute ?? state.minute) - state.minute) : team ? estimatedRepairMinutes(incident.assessment) : null;
     const response = restoration === null ? null : wait + restoration;
-    const forecast = incident.status === "open" && actionable(incident) ? rollout(state, incident.id, fallback) : baseline;
-    const deferred = incident.status === "open" && actionable(incident) ? rollout(state, incident.id, fallback, true) : forecast;
+    const forecast = !state.supervisor && incident.status === "open" && actionable(incident) ? rollout(state, incident.id, fallback) : baseline;
+    const deferred = !state.supervisor && incident.status === "open" && actionable(incident) ? rollout(state, incident.id, fallback, true) : forecast;
     details.set(incident.id, { event: impacts.get(incident.id)!.event, critical, slack: critical === null || response === null ? null : critical - response, restoration, team, wait, forecast, delayLoss: deferred.lostUnits - forecast.lostUnits, delayMisses: deferred.missedWindows - forecast.missedWindows });
   }
   const decision = (incident: PriorityIncident) => {
@@ -294,6 +310,10 @@ function calculateRanking(state: SimulationState): RankedIncident[] {
 }
 
 function finalize(state: SimulationState, reason: string): SimulationState {
+  if (state.supervisor && areaBlockers(state).length && !state.supervisor.areaStopped) {
+    state.supervisor.areaStopped = true;
+    state.supervisor.log.push({ minute: state.minute, text: "Whole modeled area held: personnel protection or quality containment requires confirmation." });
+  }
   const ranks = calculateRanking(state);
   const order = ranks.map((item) => item.incident.id);
   for (const id of new Set([...state.previousOrder, ...order])) {
@@ -312,8 +332,9 @@ function finalize(state: SimulationState, reason: string): SimulationState {
   return state;
 }
 
-export function createSimulation(scenario: "shift" | "demo" = "shift"): SimulationState {
+export function createSimulation(scenario: NonNullable<SimulationState["scenario"]> = "shift", supervisorWorkflow = false): SimulationState {
   const state: SimulationState = { scenario, minute: 0, incidents: [], buffers: STATIONS.map((station) => station.initialBuffer), injectedEventIds: [], rankChanges: [], previousOrder: [], producedUnits: 0, lostUnits: 0, stoppedMinutes: 0, autoDispatch: false, teams: [] };
+  if (supervisorWorkflow) state.supervisor = { areaStopped: false, focus: null, log: [] };
   if (scenario === "demo") state.buffers[0] = 12;
   injectDueEvents(state);
   return finalize(state, "Initial scenario observation.");
@@ -338,7 +359,7 @@ function advanceInternal(state: SimulationState, minutes: number, policy: Policy
   if (state.autoDispatch) dispatchForPolicy(state, policy);
   while (state.minute < limit - EPS) {
     let dt = nextStep(state, limit, FLOW_STEP_MINUTES);
-    const nextEvent = scenarioEvents(state.scenario).find((event) => !state.injectedEventIds.includes(event.id) && event.minute > state.minute + EPS);
+    const nextEvent = simulationEvents(state).find((event) => !state.injectedEventIds.includes(event.id) && event.minute > state.minute + EPS);
     if (nextEvent) dt = Math.min(dt, nextEvent.minute - state.minute);
     tick(state, dt);
     if (misses) breachedWindows(state, misses);
@@ -384,6 +405,7 @@ export function addIncident(state: SimulationState, assessment: FaultAssessment,
 export function startRepair(state: SimulationState, incidentId: string): SimulationState {
   const incident = state.incidents.find((item) => item.id === incidentId);
   if (!incident || incident.status !== "open" || !actionable(incident)) return state;
+  if (state.supervisor && (incident.response?.acknowledgedAt == null || incident.response.readyAt != null || assessConsequences(incident).safetyReview || assessConsequences(incident).uncontainedSpread)) return state;
   const team = chooseTeam(state, incident);
   if (!team) return state;
   const next = clone(state);
@@ -398,11 +420,14 @@ export function confirmContainment(state: SimulationState, incidentId: string): 
   const next = clone(state);
   const target = next.incidents.find(item => item.id === incidentId)!;
   target.containmentConfirmedAtMinute = next.minute;
+  target.containmentMode = "equipment-isolated";
   target.history.push({ minute: next.minute, text: "Supervisor confirmed equipment isolation and personnel clear in the demo. Exposure contained; station remains stopped. Repair and verification still required." });
+  next.supervisor?.log.push({ minute: next.minute, text: `${target.assessment.stationId}: equipment isolation and personnel clearance confirmed. Area restart remains a separate decision.` });
   return finalize(next, "Supervisor confirmed containment; consequences of delay reassessed.");
 }
 
 export function resolveIncident(state: SimulationState, incidentId: string): SimulationState {
+  if (state.supervisor) return state; // Use verified handback; generic closure must not bypass checks.
   const incident = state.incidents.find((item) => item.id === incidentId);
   if (!incident || incident.status === "resolved") return state;
   const next = clone(state);
@@ -412,11 +437,134 @@ export function resolveIncident(state: SimulationState, incidentId: string): Sim
 }
 
 export function setAutoDispatch(state: SimulationState, enabled: boolean): SimulationState {
+  if (state.supervisor) return state;
   if (state.autoDispatch === enabled) return state;
   const next = clone(state);
   next.autoDispatch = enabled;
   if (enabled) dispatchForPolicy(next, "planner");
   return finalize(next, enabled ? "Automatic shared-maintenance dispatch enabled." : "Automatic dispatch paused; existing work continues.");
+}
+
+function supervisorRecord(state: SimulationState, incident: PriorityIncident | null, text: string) {
+  const entry = { minute: state.minute, text };
+  incident?.history.push(entry);
+  state.supervisor?.log.push({ ...entry, text: incident ? `${incident.assessment.stationId ?? "Unknown location"}: ${text}` : text });
+}
+
+/** Records a phone/radio request already made by the supervisor. Sends nothing externally. */
+export function requestResponse(state: SimulationState, incidentId: string): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  if (!state.supervisor || !incident || incident.status !== "open" || incident.response) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  target.response = { team: responseTeam(target), requestedAt: next.minute, acknowledgedAt: null, owner: null, checkpointAt: next.minute + ACKNOWLEDGMENT_MINUTES, readyAt: null };
+  supervisorRecord(next, target, `${target.response.team} contacted by phone/radio. Awaiting acknowledgment; no owner confirmed.`);
+  return finalize(next, "Response requested; acknowledgment is still outstanding.");
+}
+
+export function acknowledgeResponse(state: SimulationState, incidentId: string, owner: string): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  const name = owner.trim().replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 80);
+  if (!state.supervisor || !incident?.response || incident.status === "resolved" || incident.response.acknowledgedAt !== null || name.length < 2) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  target.response!.acknowledgedAt = next.minute;
+  target.response!.owner = name;
+  target.response!.checkpointAt = next.minute + REVIEW_CHECKPOINT_MINUTES;
+  supervisorRecord(next, target, `${name} (${target.response!.team}) confirmed they are acting. Next update due at T+${target.response!.checkpointAt} min.`);
+  const evidence = assessConsequences(target);
+  // Known, contained work may begin after explicit acknowledgment. Unverified
+  // reports remain investigations: no repair duration or physical recovery is invented.
+  if (actionable(target) && !evidence.safetyReview && !evidence.uncontainedSpread) {
+    const team = chooseTeam(next, target);
+    if (team) {
+      assign(next, target, team);
+      target.response!.checkpointAt = Math.min(target.response!.checkpointAt, target.repairCompletesAtMinute!);
+    }
+  }
+  return finalize(next, "A person accepted ownership of the response.");
+}
+
+export function recordResponseUpdate(state: SimulationState, incidentId: string, note: string, nextUpdateMinutes: number): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  const text = note.trim().slice(0, 600);
+  if (!state.supervisor || !incident?.response || incident.status === "resolved" || incident.response.readyAt !== null || text.length < 5 || !Number.isFinite(nextUpdateMinutes) || nextUpdateMinutes < 1 || nextUpdateMinutes > 30) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  target.response!.checkpointAt = next.minute + nextUpdateMinutes;
+  supervisorRecord(next, target, `Follow-up recorded: ${text} Next checkpoint T+${target.response!.checkpointAt} min. ${target.response!.acknowledgedAt === null ? "Acknowledgment still outstanding." : "Ownership unchanged."}`);
+  return finalize(next, "Follow-up recorded without inventing acknowledgment or completion.");
+}
+
+export function recordInvestigationReturn(state: SimulationState, incidentId: string, note: string): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  if (!state.supervisor || !incident?.response || incident.response.acknowledgedAt === null || incident.response.readyAt !== null || incident.status !== "open" || actionable(incident) || note.trim().length < 5) return state;
+  const e = assessConsequences(incident);
+  if (e.safetyReview || e.uncontainedSpread) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  target.response!.readyAt = next.minute;
+  supervisorRecord(next, target, `Responsible team returned its investigation: ${note.trim().slice(0, 600)} Supervisor verification still required.`);
+  return finalize(next, "Investigation returned for supervisor verification.");
+}
+
+export function confirmIncidentLocation(state: SimulationState, incidentId: string, stationId: string, observation: string): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  const station = STATIONS.find(s => s.id === stationId);
+  if (!state.supervisor || !incident || incident.status !== "open" || incident.assessment.stationId || !station || observation.trim().length < 5) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  // Confirming location supplies no diagnosis, numeric forecast or protection.
+  target.assessment = { ...target.assessment, stationId: station.id, evidence: [...target.assessment.evidence, `Supervisor-confirmed location ${station.id}: ${observation.trim().slice(0, 600)}`] };
+  supervisorRecord(next, target, `Equipment location confirmed: ${station.id}. ${observation.trim().slice(0, 600)}`);
+  return finalize(next, "Location verified; consequences still require review.");
+}
+
+export function verifyResponse(state: SimulationState, incidentId: string, checksConfirmed: boolean, note: string): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  if (!state.supervisor || !incident || incident.status === "resolved" || incident.response?.readyAt == null || !checksConfirmed || note.trim().length < 5) return state;
+  const e = assessConsequences(incident);
+  if (e.safetyReview || e.uncontainedSpread) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  supervisorRecord(next, target, `Supervisor verified the returned work against the established checks: ${note.trim().slice(0, 600)}`);
+  finish(next, target, true);
+  return finalize(next, "Returned work verified. Any area restart remains a separate decision.");
+}
+
+export function confirmProductContainment(state: SimulationState, incidentId: string, confirmed: boolean): SimulationState {
+  const incident = state.incidents.find(i => i.id === incidentId);
+  if (!state.supervisor || !incident || incident.status !== "open" || !confirmed || incident.containmentConfirmedAtMinute != null) return state;
+  const e = assessConsequences(incident);
+  if (e.safetyReview || !e.uncontainedSpread || !incident.assessment.stationId) return state;
+  const next = clone(state);
+  const target = next.incidents.find(i => i.id === incidentId)!;
+  target.containmentConfirmedAtMinute = next.minute;
+  target.containmentMode = "product-held";
+  supervisorRecord(next, target, "Supervisor confirmed affected product segregated and an approved check prevents further quality spread. Equipment isolation is not asserted; area restart still requires confirmation.");
+  return finalize(next, "Affected product contained; area restart requires supervisor review.");
+}
+
+export function restartArea(state: SimulationState, checksConfirmed: boolean): SimulationState {
+  if (!canRestartArea(state) || !checksConfirmed) return state;
+  const next = clone(state);
+  next.supervisor!.areaStopped = false;
+  supervisorRecord(next, null, "Supervisor confirmed established area restart checks. Area hold released; individual equipment isolation and pending verification remain in force.");
+  return finalize(next, "Area restart confirmed; production deadlines recalculated.");
+}
+
+export function focusSupervisorAction(state: SimulationState, actionId: string): SimulationState {
+  if (!state.supervisor || !getAttentionPlan(state, getRankedIncidents(state)).actions.some(a => a.id === actionId)) return state;
+  const next = clone(state);
+  next.supervisor!.focus = { actionId, untilMinute: next.minute + SUPERVISOR_ACTION_MINUTES };
+  return next;
+}
+
+export function addHandoverNote(state: SimulationState, note: string): SimulationState {
+  if (!state.supervisor || note.trim().length < 5) return state;
+  const next = clone(state);
+  supervisorRecord(next, null, `Shift correction / handover note: ${note.trim().slice(0, 1200)}`);
+  return next;
 }
 
 /** Same event stream, start inventory, resources, safety gates and durations for

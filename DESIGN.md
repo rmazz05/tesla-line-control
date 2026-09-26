@@ -105,3 +105,25 @@ The current demo stays in the working application. Remove the slide-based pitch 
 ## Incident review composition
 
 At wide laptop sizes, the decision area uses 43% of the workspace. While a report is open, a compact comparison strip retains all waiting ranks, stations and response windows. It supports switching incidents without returning to the queue. Show timing, decision, matching cases and containment before original source prose. Same-time supervisor actions may announce changed repair windows for other incidents, using actual before/after forecasts. Ordinary time ticks do not create these causal notifications.
+
+## Factory navigation and equipment
+
+Preserve the original assets and add schematic equipment for previously empty stations: body transfer, cockpit, battery, fluids and inspection. These are illustrative meshes, not plant CAD. Their operating motion follows local flow, playback and reduced-motion settings. Incident leaders terminate on the relevant equipment.
+
+Use a continuous floor with ordinary cast shadows; omit distance fog and the bounded contact-shadow overlay. Orbit and Pan are explicit modes, with pointer-centered wheel zoom, zoom buttons and Fit view. Bound panning and prevent the camera from going below the floor. Resizing preserves the chosen viewing direction; only Fit view restores the overview.
+
+## Schematic production overview
+
+The desktop workspace has a persistent 3D factory / Schematic switch in the line header. The schematic follows the same eight stations and the same current readings as the 3D scene. Its connected path runs left to right across the first row, then right to left across the second; arrowheads show direction. Narrow panels fold into four rows without changing semantic station order.
+
+A station shows its code, plain-language name, concise reported problem, queue priority and actual production state. Healthy stations recede into a neutral surface. Color supplements explicit priority numbers and state labels; it never stands alone. Blocked/starved stations name the adjacent handoff and do not acquire an incident badge. Multiple incidents remain accessible from the station; reports with no confirmed location remain explicitly unlocated. Clicking the map highlights the queue; only explicit incident review opens the report.
+
+Both views remain mounted while switching. A 240–280ms opacity/transform transition preserves simulation, selection and camera state; the inactive view is inert and hidden from assistive technology. Reduced-motion disables the transition. The overview receives more desktop width, with 44px view/action controls and the priority queue kept alongside it. At 1280 × 633 the focused eight-station schematic fits without scrolling.
+
+Applied ui-ux-pro-max accessibility, semantic-state, spacing, contrast, progressive-disclosure and motion guidance. Its installed SKILL.md was available, but its referenced search.py and data package were absent; no generated design-system results are claimed.
+
+## Berlin plant and supervisor line
+
+The priority 3D view now follows the 2023 Berlin planning baseline. This supersedes the earlier instruction to preserve the priority view's small asset scene; the original operations scene is retained. Use a metre-based campus and GA cutaway with **Whole plant / My line** scopes. Both scopes share world coordinates and continuous simulation state. Keep the dark dashboard/light factory identity and existing incident urgency semantics. The plan reference discloses approximated building dimensions and illustrative equipment/routes. Do not present the scene as a current Tesla digital twin. The adjacent schematic remains a logical process diagram.
+
+Floor view places the camera at approximately human height in the supervisor aisle. Show the ceiling from inside, retaining the cutaway for aerial scopes. At oblique angles, arrange incident labels without collisions; let lower-priority background state labels recede while the incident list remains available.
