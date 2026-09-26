@@ -50,6 +50,7 @@ import type {
 } from "@/lib/priority/types";
 import styles from "./priority-dashboard.module.css";
 import { getLineActivity, type LineActivity } from "@/lib/priority/activity";
+import { INSPECT_CHANNEL, isInspectMessage, requestPcInspect } from "@/lib/attention/pc-inspect";
 import { MobilePriorityDashboard } from "./mobile-priority-dashboard";
 
 const DESKTOP_QUERY = "(min-width: 768px)";
@@ -238,6 +239,32 @@ export function PriorityDashboard() {
   useEffect(() => { if (panel === "intake") reportInput.current?.focus(); }, [panel]);
   useEffect(() => () => requestController.current?.abort(), []);
 
+  const incidentsRef = useRef(simulation.incidents);
+  incidentsRef.current = simulation.incidents;
+
+  useEffect(() => {
+    if (!desktop || typeof BroadcastChannel === "undefined") return;
+    const channel = new BroadcastChannel(INSPECT_CHANNEL);
+    channel.onmessage = (event: MessageEvent) => {
+      if (!isInspectMessage(event.data)) return;
+      const id = event.data.incidentId;
+      if (!incidentsRef.current.some((incident) => incident.id === id)) {
+        setNotice("The phone asked for an incident that is not on this PC yet. Run the same demo in both windows.");
+        return;
+      }
+      dispatch({ type: "select", id });
+      setPlaying(false);
+      setPanel("report");
+    };
+    return () => channel.close();
+  }, [desktop]);
+
+  function inspectOnPc(id: string) {
+    setNotice(requestPcInspect(id)
+      ? "Sent to the factory PC. Keep a wide window of this app open on this computer."
+      : "This browser cannot open the incident on another window.");
+  }
+
   function advance(minutes: number) { dispatch({ type: "update", apply: (current) => advanceSimulation(current, minutes) }); }
   function nextIncident() {
     if (!nextEvent) return;
@@ -336,6 +363,7 @@ export function PriorityDashboard() {
       notice={notice}
       onDismissNotice={() => setNotice(null)}
       onOpenReport={openReport}
+      onInspectOnPc={inspectOnPc}
       onOpenIntake={openIntake}
       onOpenControls={() => setPanel("controls")}
     /> : <><header className={styles.topbar}>

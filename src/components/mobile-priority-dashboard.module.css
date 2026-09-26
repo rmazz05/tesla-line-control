@@ -41,6 +41,10 @@
 .reportButton { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; padding: 0 2px 0 10px; border: 0; background: transparent; border-radius: 3px; color: #d7e1e4; font-size: 14px !important; }
 .incidentList { padding-inline: 20px !important; }
 .incidentList > li + li { border-top: 1px solid var(--mobile-line); }
+.inspectButton {
+  display: inline-flex; align-items: center; min-height: 44px; margin: 0 0 18px; padding: 0 2px;
+  border: 0; background: transparent; color: #d7e1e4; font-size: 14px !important;
+}
 .incidentRow {
   --urgency: #bad0d8;
   width: 100%; padding: 20px 0 22px; display: block; border: 0; border-radius: 0;

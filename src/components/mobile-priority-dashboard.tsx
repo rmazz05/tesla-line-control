@@ -5,6 +5,7 @@ import {
   ListNumbersIcon, PlusIcon, XIcon,
 } from "@phosphor-icons/react";
 import { useMemo, useState } from "react";
+import { ATTENTION_LABEL, placeAttention, type AttentionBucket } from "@/lib/attention/bucket";
 import { STATIONS } from "@/lib/priority/config";
 import { getIncidentPresentation, getIncidentTitle } from "@/lib/priority/presentation";
 import { getStationEffect, getStationStatus } from "@/lib/priority/station-effect";
@@ -22,6 +23,7 @@ export interface MobilePriorityDashboardProps {
   notice: string | null;
   onDismissNotice: () => void;
   onOpenReport: (id: string) => void;
+  onInspectOnPc: (id: string) => void;
   onOpenIntake: () => void;
   onOpenControls: () => void;
 }
@@ -50,6 +52,13 @@ function timecode(minutes: number) {
 
 function number(value: number) { return Number(value.toFixed(1)); }
 
+function elapsed(minute: number, reportedAtMinute: number) {
+  const delta = Math.max(0, minute - reportedAtMinute);
+  if (delta < 1) return "Just now";
+  const rounded = Math.max(1, Math.round(delta));
+  return `${rounded} min ago`;
+}
+
 function getActivityEntries(simulation: SimulationState): ActivityEntry[] {
   const entries: ActivityEntry[] = simulation.incidents.flatMap((incident) => incident.history.flatMap((entry, index): ActivityEntry[] => {
     // Priority history has its own structured records; do not show it twice.
@@ -75,13 +84,17 @@ function getActivityEntries(simulation: SimulationState): ActivityEntry[] {
 
 export function MobilePriorityDashboard({
   simulation, ranking, readings, activity, running, pending, notice,
-  onDismissNotice, onOpenReport, onOpenIntake, onOpenControls,
+  onDismissNotice, onOpenReport, onInspectOnPc, onOpenIntake, onOpenControls,
 }: MobilePriorityDashboardProps) {
   const [view, setView] = useState<View>("incidents");
   const [seenActivity, setSeenActivity] = useState<LineActivity | null>(null);
   const hasUnreadActivity = !!activity && activity !== seenActivity && view !== "activity";
-  const waiting = ranking.filter((item) => item.incident.status === "open");
-  const repairing = ranking.filter((item) => item.incident.status === "repairing");
+  const placed = ranking.map((item) => ({ item, attention: placeAttention(item) }));
+  const byBucket = (bucket: AttentionBucket) => placed.filter((entry) => entry.attention.bucket === bucket);
+  const needsYou = byBucket("needs_you");
+  const waitingAck = byBucket("waiting_ack");
+  const handled = byBucket("being_handled");
+  const monitor = byBucket("monitor");
   const resolved = simulation.incidents.filter((incident) => incident.status === "resolved")
     .slice().sort((a, b) => (b.resolvedAtMinute ?? 0) - (a.resolvedAtMinute ?? 0));
   const entries = useMemo(() => getActivityEntries(simulation), [simulation]);
@@ -90,7 +103,7 @@ export function MobilePriorityDashboard({
   const output = finalReading?.ratePerHour ?? 0;
   const nominalOutput = STATIONS[STATIONS.length - 1].ratePerMinute * 60;
   const lineState = lineEffect?.kind === "slowed" ? "Slowed" : lineEffect?.label ?? "Unknown";
-  const title = view === "incidents" ? "Incidents" : view === "line" ? "Line status" : "Updates";
+  const title = view === "incidents" ? "Needs you" : view === "line" ? "Line status" : "Updates";
 
   function changeView(next: View) {
     if (view === "activity" || next === "activity") setSeenActivity(activity);
@@ -123,7 +136,7 @@ export function MobilePriorityDashboard({
     <main className={styles.main} id="mobile-view">
       <div className={styles.heading}>
         <h1 id="queue-title" tabIndex={-1}>{title}
-          {view === "incidents" && waiting.length + repairing.length > 0 && <span>{" " + (waiting.length + repairing.length)}</span>}
+          {view === "incidents" && needsYou.length > 0 && <span>{" " + needsYou.length}</span>}
         </h1>
         {view === "incidents" && <button type="button" className={styles.reportButton}
           onClick={onOpenIntake} disabled={pending} aria-label="Report incident" aria-haspopup="dialog">
@@ -136,41 +149,45 @@ export function MobilePriorityDashboard({
       </div>}
 
       {view === "incidents" && <>
-        {waiting.length > 0 ? <ol className={styles.incidentList} aria-label="Incidents in priority order">
-          {waiting.map((item) => {
+        {needsYou.length > 0 ? <ol className={styles.incidentList} aria-label="Incidents that need the supervisor">
+          {needsYou.map(({ item, attention }) => {
             const { incident } = item;
             const presentation = getIncidentPresentation(item, simulation.minute);
             return <li key={incident.id}>
               <button type="button" id={"queue-" + incident.id} className={styles.incidentRow}
                 data-urgency={presentation.urgency} onClick={() => reviewIncident(incident.id)} aria-haspopup="dialog">
                 <span className={styles.incidentMeta}>
-                  <span className={styles.station}>
-                    <span className={styles.rank}><span className={styles.srOnly}>Priority </span>{item.rank}</span>
-                    {incident.assessment.stationId ?? "Location unconfirmed"}
-                  </span>
-                  <span className={styles.deadline}>{presentation.timingLabel}</span>
+                  <span className={styles.station}>{incident.assessment.stationId ?? "Location unconfirmed"}</span>
+                  <span className={styles.deadline}>{elapsed(simulation.minute, incident.reportedAtMinute)}</span>
                 </span>
                 <span className={styles.incidentTitle}>{presentation.title}<ArrowRightIcon size={17} aria-hidden="true" /></span>
-                <span className={styles.consequence}>{presentation.calculation ?? presentation.consequence}</span>
+                <span className={styles.consequence}>{attention.reason}</span>
+              </button>
+              <button type="button" className={styles.inspectButton} onClick={() => onInspectOnPc(incident.id)}>
+                Inspect on PC
               </button>
             </li>;
           })}
         </ol> : <div className={styles.emptyState}>
           <CheckCircleIcon size={24} aria-hidden="true" />
-          <h2>{repairing.length ? "Every incident has a response" : simulation.incidents.length === 0 ? "All stations operating normally" : "No incidents waiting"}</h2>
-          {!repairing.length && <button type="button" className={styles.textButton} onClick={onOpenControls}>Open demo controls<ArrowRightIcon size={16} aria-hidden="true" /></button>}
+          <h2>{simulation.incidents.length === 0 ? "All stations operating normally" : "Nothing needs you right now"}</h2>
+          {simulation.incidents.length === 0 && <button type="button" className={styles.textButton} onClick={onOpenControls}>Open demo controls<ArrowRightIcon size={16} aria-hidden="true" /></button>}
         </div>}
 
-        {repairing.length > 0 && <section className={styles.repairs} aria-labelledby="mobile-repairs-title">
-          <h2 id="mobile-repairs-title">In repair <span>{repairing.length}</span></h2>
-          {repairing.map((item) => <button type="button" id={"queue-" + item.incident.id} key={item.incident.id}
+        {([
+          ["waiting_ack", waitingAck],
+          ["being_handled", handled],
+          ["monitor", monitor],
+        ] as const).map(([bucket, group]) => <details key={bucket} className={styles.details}>
+          <summary>{ATTENTION_LABEL[bucket]} <span>{group.length}</span></summary>
+          {group.map(({ item, attention }) => <button type="button" id={"queue-" + item.incident.id} key={item.incident.id}
             className={styles.repairRow} onClick={() => reviewIncident(item.incident.id)} aria-haspopup="dialog">
-            <span className={styles.incidentMeta}><span className={styles.station}>{item.incident.assessment.stationId}</span>
-              <span>{getIncidentPresentation(item, simulation.minute).timingLabel}</span></span>
+            <span className={styles.incidentMeta}><span className={styles.station}>{item.incident.assessment.stationId ?? "Location unconfirmed"}</span>
+              <span>{elapsed(simulation.minute, item.incident.reportedAtMinute)}</span></span>
             <span className={styles.repairTitle}>{getIncidentTitle(item.incident.assessment)}<ArrowRightIcon size={16} aria-hidden="true" /></span>
-            {item.incident.assessment.safety !== "none" && <span className={styles.safety}>Safety hold active</span>}
+            <span className={styles.consequence}>{attention.reason}</span>
           </button>)}
-        </section>}
+        </details>)}
 
         {resolved.length > 0 && <details className={styles.details}>
           <summary>Resolved <span>{resolved.length}</span></summary>

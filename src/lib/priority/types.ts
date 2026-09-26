@@ -52,7 +52,17 @@ export interface PriorityIncident {
   repairCompletesAtMinute: number | null;
   resolvedAtMinute: number | null;
   assignedTeamId: string | null;
+  /** Open coordination with another team. Absent until the supervisor contacts someone. */
+  handoff?: IncidentHandoff | null;
   history: { minute: number; text: string }[];
+}
+
+export type HandoffTeam = "maintenance" | "quality" | "planning" | "engineering";
+
+export interface IncidentHandoff {
+  team: HandoffTeam;
+  contactedAtMinute: number;
+  acknowledgedAtMinute: number | null;
 }
 
 export interface ScenarioEvent {
